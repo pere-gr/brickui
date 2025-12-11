@@ -1,12 +1,13 @@
 # BrickUI
 
 BrickUI is an experimental **vanilla-JavaScript UI micro-framework** built around “bricks”:
-small, self-contained components (grids, forms, etc.) wired together by a powerful event bus
-and an extensible plugin system.
+small, self-contained components (grids, forms, background services, etc.) wired together by
+a powerful event bus and an extensible plugin system.
 
 > **Status:** early alpha – architecture is still moving, APIs will break.  
-> **Goal:** a real playground for enterprise-style components (grids/forms) with
-> strong lifecycle and events, but **zero runtime dependencies** and a **single JS file**.
+> **Goal:** a real playground for enterprise-style components (grids/forms) and
+> headless services, with strong lifecycle & events, **zero runtime dependencies**
+> and a **single JS file**.
 
 ---
 
@@ -21,7 +22,7 @@ BrickUI is an experiment to flip that around:
 - Every interesting thing is an **event** with 3 phases: `before` → `on` → `after`.
 - Events are named like `namespace:action:target` and can use wildcards.
 - Extensions subscribe to those events and can **cancel**, **modify**, or **react** to them.
-- Components stay small and composable; “magic” lives in extensions.
+- Components stay small and composable; “behaviour” lives in extensions and services.
 
 All of this runs on plain JS – no bundler required to *use* it.
 
@@ -32,12 +33,16 @@ All of this runs on plain JS – no bundler required to *use* it.
 - **Vanilla JS only**  
   Single runtime file: `dist/brickui.js`. No React, no jQuery, no external deps.
 
-- **Bricks**  
+- **Bricks (with or without DOM)**  
   Each brick has:
-  - an `id` and a `kind` (e.g. `grid`, `form`),
+  - an `id` and a `kind` (e.g. `grid`, `form`, `service`),
   - an **options controller** (`brick.options.*`),
   - an **event bus controller** (`brick.events.*`),
   - an **extensions controller** that installs plugins based on `for` / `requires`.
+
+  A brick **does not need a DOM element**.  
+  You can use bricks as pure, headless components (state + events + extensions) to implement
+  services, data pipelines, orchestration logic, etc.
 
 - **Event bus with phases**  
   - Event names like `brick:ready:grid1`, `store:data:set`, `store:data:sort`, …  
@@ -55,10 +60,13 @@ All of this runs on plain JS – no bundler required to *use* it.
     - `options`: default options merged into the brick.
     - `init` / `destroy`: lifecycle hooks.
 
-- **Auto-bootstrap from the DOM**  
+- **Auto-bootstrap from the DOM (optional)**  
   Any element with `class="bui"` becomes a brick; the `kind` is read from
   `brick-kind`, `data-kind` or `data-brick-kind`. The `dom` extension is wired
   automatically with the element as the brick’s root.
+
+  This is just a convenience for **UI bricks**.  
+  You can also create bricks manually from JS for **headless bricks / services**.
 
 - **Grid demo** [(work in progress)](https://pere-gr.github.io/brickui/)  
   - `grid` brick kind.  
@@ -128,11 +136,21 @@ grid.store.set(newRowsArray);     // triggers store:data:set + re-render
 
 ### Bricks
 
+Bricks are the basic runtime unit. They can be UI bricks **bound to the DOM** or
+headless bricks used purely as services.
+
 ```js
+// UI brick bound to a DOM element
 const grid = new BrickUI.brick({
   id: 'grid1',
   kind: 'grid',
   dom: { id: 'grid1' }
+});
+
+// Headless brick (no DOM), e.g. a service
+const service = new BrickUI.brick({
+  id: 'nexus-service',
+  kind: 'service'
 });
 ```
 
@@ -276,6 +294,32 @@ This list will change, but right now you’ll find things like:
 
 ---
 
+## Service bricks & Nexus (planned)
+
+Bricks can also be used as **services**: no DOM, only state + events + extensions.
+The idea is to build higher-level bricks that coordinate other bricks:
+
+- master / detail wiring,
+- shared stores between multiple grids,
+- sync between forms and grids, etc.
+
+A planned example is a `Nexus` service that links bricks automatically based on
+IDs and roles (e.g. a `master` grid and several `slave` views), configured with
+simple options such as:
+
+```js
+// sketch of a future Nexus-style link
+grid.options.set('nexus.links', [
+  { id: 0, kind: 'master' },
+  { id: 2, source: 0, kind: 'slave' }
+]);
+```
+
+This is not implemented yet, but the current architecture (bricks + extensions + events)
+is designed with this kind of service in mind.
+
+---
+
 ## Roadmap
 
 Short-term ideas:
@@ -283,8 +327,9 @@ Short-term ideas:
 - Clean up / split the monolithic `dist/brickui.js` into smaller `src/*` modules.
 - Finish and document a stable **data store** API (remote / local data, paging hooks).
 - Add a simple **form** brick type reusing the same event / extension model.
+- Introduce the first **service bricks** (Nexus-style master/detail wiring).
 - More demos:
-  - master/detail with two grids bound by events,
+  - master/detail with two grids bound by a service brick,
   - form + grid linked via a shared store.
 
 Non-goals (for now):

@@ -1,4 +1,4 @@
-;(function (BrickUI) {
+
   /**
    * Per-brick event bus controller.
    * Manages events shaped as "namespace:event:target" with phases before/on/after.
@@ -13,8 +13,8 @@ function EventBusController(brick) {
   var bus = this;
   if (brick) {
     brick.events = {
-      on: function (pattern, phase, priority, handler) {
-        bus.on(pattern, phase, priority, handler);
+      on: function (pattern, phase, priority, handler, meta) {
+        bus.on(pattern, phase, priority, handler, meta);
         return brick; // permet chaining
       },
       off: function (pattern, phase, handler) {
@@ -81,7 +81,19 @@ function EventBusController(brick) {
    * phase: "before" | "on" | "after" (default "on")
    * priority: 0..10 (default 5, 0 = highest priority)
    */
-  EventBusController.prototype.on = function (pattern, phase, priority, handler) {
+  EventBusController.prototype.on = function (pattern, phase, priority, handler, meta) {
+    // signature compatible: on(pattern, phase, priority, handler, meta)
+    // phase optional, priority optional, meta optional
+    if (typeof phase === 'function') {
+      meta = handler;
+      handler = phase;
+      phase = 'on';
+      priority = undefined;
+    } else if (typeof priority === 'function' && typeof handler !== 'function') {
+      meta = handler;
+      handler = priority;
+      priority = undefined;
+    }
     if (typeof handler !== 'function') return;
 
     let ph = phase || 'on';
@@ -95,6 +107,7 @@ function EventBusController(brick) {
       phase: ph,
       handler: handler,
       priority: pr,
+      meta: meta || null
     });
 
     // Sort by priority asc (0 = first)
@@ -126,19 +139,18 @@ function EventBusController(brick) {
 
     // Event object shared across phases
     const ev = {
-      name: eventName, // "ns:event:target"
-      namespace: key.namespace,
-      event: key.event,
-      target: key.target,
-
-      phase: null, // "before" | "on" | "after"
-      data: payload,
       brick: this.brick || null,
-
       cancel: false, // if true, skip "on" phase
-      stopPhase: false, // if true, stop the current phase loop
+      data: payload,
       errors: [], // collected handler errors
-      meta: {}, // free metadata bag
+      event:{
+        phase: null, // "before" | "on" | "after"
+        name: eventName, // "ns:event:target"
+        namespace: key.namespace,
+        event: key.event,
+        target: key.target,
+      },
+      stopPhase: false, // if true, stop the current phase loop
     };
 
     for (let p = 0; p < phases.length; p += 1) {
@@ -147,7 +159,7 @@ function EventBusController(brick) {
       // if canceled, skip "on" phase but still run others
       if (phase === 'on' && ev.cancel) continue;
 
-      ev.phase = phase;
+      ev.event.phase = phase;
 
       for (let i = 0; i < this.handlers.length; i += 1) {
         const h = this.handlers[i];
@@ -162,7 +174,8 @@ function EventBusController(brick) {
             await r; // support async handlers
           }
         } catch (err) {
-          ev.errors.push(err);
+          console.error('Error in handler', h.handler, { pattern: h.pattern, phase: h.phase, meta: h.meta }, err);
+          ev.errors.push({ error: err, meta: h.meta, pattern: h.pattern, phase: h.phase });
           // on handler error, force cancel
           ev.cancel = true;
         }
@@ -195,4 +208,3 @@ function EventBusController(brick) {
 
   BrickUI.controllers = BrickUI.controllers || {};
   BrickUI.controllers.events = EventBusController;
-})(window.BrickUI);

@@ -1,0 +1,108 @@
+/* Contenidor de la graella */
+.bui-grid {
+  width: 100%;
+  border-collapse: separate;       /* permet border-radius al voltant de la taula */
+  border-spacing: 0;
+  background: #ffffff;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #1f2933;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 4px 12px rgba(15, 23, 42, 0.06);
+  border-radius: 8px;
+  overflow: hidden;                /* arrodoneix cantonades visibles */
+}
+
+/* Capçalera */
+.bui-grid thead {
+  background: linear-gradient(to bottom, #f9fafb, #eef1f6);
+}
+
+.bui-grid th {
+  font-weight: 600;
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid #d3d9e4;
+  color: #374151;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Cèl·lules */
+.bui-grid td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #e4e7ec;
+  background-color: #ffffff;
+  color: #111827;
+}
+
+/* Última fila sense línia inferior */
+.bui-grid tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Zebra + hover */
+.bui-grid tbody tr:nth-child(even) td {
+  background-color: #f9fafb;
+}
+
+.bui-grid tbody tr:hover td {
+  background-color: #e5f0ff;
+}
+
+/* Fila seleccionada */
+.bui-grid-row-selected td {
+  background-color: #d0e6ff !important;
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+
+/* Columnes ordenables (classe del teu JS: bui-grid-sortable) */
+.bui-grid-sortable,
+.bui-sortable {
+  cursor: pointer;
+  position: relative;
+  padding-right: 18px; /* espai per a la fletxa */
+  color: #1f2937;
+}
+
+.bui-grid-sortable:hover,
+.bui-sortable:hover {
+  color: #111827;
+}
+
+/* Iconet de sort “neutre” */
+.bui-grid-sortable::after,
+.bui-sortable::after {
+  content: "⇵";
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  opacity: 0.35;
+}
+
+/* Si algun dia hi afegeixes classes per estat: asc/desc */
+.bui-grid-sortable.bui-grid-sort-asc::after,
+.bui-sortable.bui-grid-sort-asc::after {
+  content: "▲";
+  opacity: 0.8;
+}
+
+.bui-grid-sortable.bui-grid-sort-desc::after,
+.bui-sortable.bui-grid-sort-desc::after {
+  content: "▼";
+  opacity: 0.8;
+}
+
+/* Transicions suaus */
+.bui-grid th,
+.bui-grid td,
+.bui-grid tbody tr {
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+/* Pequena separació exterior si la taula no ocupa tot el layout */
+.bui-grid + .bui-grid {
+  margin-top: 16px;
+}

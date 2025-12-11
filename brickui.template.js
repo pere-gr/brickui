@@ -5,6 +5,12 @@
     controllers: {},
     brick: null,
     extensions: {},
+    runtime: {},
     services: null,
   };
 })(typeof window !== 'undefined' ? window : this);
+
+
+;(function (BrickUI) {
+/* @BUNDLE */
+})(window.BrickUI);

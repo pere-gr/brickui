@@ -2,6 +2,7 @@
 // Load this file after ../dist/brickui.js.
 
 (function (BrickUI) {
+  console.warn("Installing demo extensions");
   if (!BrickUI || !BrickUI.extensions) {
     console.error('BrickUI is not loaded. Include ../dist/brickui.js before demo.js');
     return;
@@ -69,21 +70,33 @@
   BrickUI.extensions.demoDom = {
     _name: 'demoDom',
     _for: '*',
-
-    init: function () {
-      if (this.kind !== 'demo-dom') return false;
+    //_requires: ['dom'],
+    init: function (ext) {
+      if (this.kind !== "demo-dom") return false;
+      return true;
     },
 
     _listeners: [
+      { for: 'dom:*:*', handlers: [{ phase: 'before', fn: 'logBeforeDomEvent' }] },
       { for: 'dom:click:*', handlers: [{ phase: 'on', fn: 'logDomEvent' }] },
-      { for: 'dom:hover:on', handlers: [{ phase: 'on', fn: 'logDomEvent' }] },
+      //{ for: 'dom:hover:on', handlers: [{ phase: 'on', fn: 'logDomEvent' }] },
       { for: 'dom:hover:off', handlers: [{ phase: 'on', fn: 'logDomEvent' }] },
-      { for: 'dom:mouse:down', handlers: [{ phase: 'on', fn: 'logDomEvent' }] },
+      //{ for: 'dom:mouse:down', handlers: [{ phase: 'on', fn: 'logDomEvent' }] },
       { for: 'dom:mouse:up', handlers: [{ phase: 'on', fn: 'logDomEvent' }] },
+      { for: 'dom:*:*', handlers: [{ phase: 'after', fn: 'logAfterDomEvent' }] },
+      
     ],
-
+    logBeforeDomEvent: function (ext, ev) {
+      console.log('[demoDom] > before >', ev.name, ev);
+      this.css.setStyle("border","1px solid red");
+    },
     logDomEvent: function (ext, ev) {
-      console.log('[demoDom]', ev.name, ev);
+      console.log('[demoDom] > on >', ev.name, ev);
+      this.css.toggleClass("demo");
+    },
+    logAfterDomEvent: function (ext, ev) {
+      console.log('[demoDom] > before >', ev.name, ev);
+      this.css.setStyle("border","1px dashed #888");
     },
   };
 })(window.BrickUI);

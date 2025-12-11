@@ -1,9 +1,5 @@
-;(function (BrickUI) {
-  // Assegurem BrickUI global
-  BrickUI = BrickUI || (window.BrickUI = window.BrickUI || {});
-
   // Diccionari de definicions d'extensions:
-  //   BrickUI.extensions.myExt = { _name: "myExt", ... }
+  //   BrickUI.extensions.myExt = { ns: "myExt", ... }
   BrickUI.extensions = BrickUI.extensions || {};
 
   // Petit helper de registre/base
@@ -21,12 +17,11 @@
         const def = src[key];
         if (!def || typeof def !== 'object') continue;
 
-        // Si no té _name, fem servir la clau
-        if (!def._name) def._name = key;
+        // Si no té _name, fem servir ns o la clau
+        if (!def._name) def._name = def.ns || key;
 
-        list.push(def);
+        list.push({name: key, ext: def});
       }
       return list;
     }
   };
-})(window.BrickUI);

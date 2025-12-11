@@ -5,16 +5,14 @@
     controllers: {},
     brick: null,
     extensions: {},
+    runtime: {},
     services: null,
   };
 })(typeof window !== 'undefined' ? window : this);
 
+
 ;(function (BrickUI) {
-  let idCounter = 0;
-  function nextId() {
-    idCounter += 1;
-    return 'brick-' + idCounter;
-  }
+
 
   /**
    * Brick constructor.
@@ -23,28 +21,195 @@
    */
   function Brick(options) {
     const opts = options && typeof options === 'object' ? Object.assign({}, options) : {};
-    opts.id = opts.id || nextId();
+    opts.id = opts.id || this._nextId();
     opts.kind = (opts.kind || 'brick').toLowerCase();
-    this.id = opts.id;
-    this.kind = opts.kind;
-    this._controllers = Object.freeze({
+    Object.defineProperty(this, 'id', {
+      value: opts.id,
+      writable: false,
+      configurable: false,
+      enumerable: true
+    });
+    Object.defineProperty(this, 'kind', {
+      value: opts.kind,
+      writable: false,
+      configurable: false,
+      enumerable: true
+    });
+    const controllers = Object.freeze({
       options: new BrickUI.controllers.options(this,opts),
       events: new BrickUI.controllers.events(this),
       extensions: new BrickUI.controllers.extensions(this),
     });
+    Object.defineProperty(this, '_controllers', {
+      value: controllers,
+      writable: false,
+      configurable: false,
+      enumerable: false
+    });
 
-    this._controllers.extensions.applyAll();
-    this._controllers.events.fireAsync('brick:ready:*', { options: opts });
+    controllers.extensions.applyAll();
+    controllers.events.fireAsync('brick:ready:*', { options: opts });
   }
 
   Brick.prototype.destroy = function () {
     this._controllers.events.fire('brick:destroy:*', {});
   };
 
-  BrickUI.brick = Brick;
-})(window.BrickUI);
+  Object.defineProperty(Brick, '_idCounter', {
+    value: 0,
+    writable: true,
+    configurable: false,
+    enumerable: false
+  });
 
-;(function (BrickUI) {
+  Object.defineProperty(Brick.prototype, '_nextId', {
+    value: function () {
+      Brick._idCounter += 1;
+      return 'brick-' + Brick._idCounter;
+    },
+    writable: false,
+    configurable: false,
+    enumerable: false
+  });
+
+  BrickUI.brick = Brick;
+
+BrickUI.extensions.grid = {
+  for: ['grid'],
+  requires: ['dom'],
+  ns: 'grid',
+  options: {},
+
+  brick: {
+    refresh: function () {
+      if (this.__gridExt) this.__gridExt._refreshRows();
+    },
+    getSelection: function () {
+      const ext = this.__gridExt;
+      if (!ext) return { index: -1, row: null };
+      const idx = (typeof ext.selectedIndex === 'number') ? ext.selectedIndex : -1;
+      const row = (idx >= 0 && ext.rows && ext.rows[idx]) ? ext.rows[idx] : null;
+      return { index: idx, row: row };
+    },
+    clearSelection: function () {
+      if (this.__gridExt) this.__gridExt._setSelectedIndex(-1);
+    }
+  },
+
+  extension: {
+    table: null,
+    rows: [],
+    selectedIndex: -1,
+    _findTable: function () {
+      const root = this.brick.dom && typeof this.brick.dom.element === 'function'
+        ? this.brick.dom.element()
+        : null;
+      if (!root || !root.querySelector) {
+        this.table = null;
+        return null;
+      }
+      const table =
+        root.querySelector('table.bui-grid') ||
+        root.querySelector('table');
+      this.table = table || null;
+      return this.table;
+    },
+    _refreshRows: function () {
+      const table = this.table || this._findTable();
+      if (!table) {
+        this.rows = [];
+        this.selectedIndex = -1;
+        return;
+      }
+      const body = (table.tBodies && table.tBodies.length)
+        ? table.tBodies[0]
+        : table.querySelector('tbody');
+      const rows = body ? body.rows : table.rows;
+      this.rows = Array.prototype.slice.call(rows || []);
+      if (this.selectedIndex >= this.rows.length) {
+        this.selectedIndex = -1;
+      }
+    },
+    _setSelectedIndex: function (index) {
+      const rows = this.rows || [];
+      if (!rows.length) {
+        this.selectedIndex = -1;
+        return;
+      }
+      if (typeof index !== 'number' || index < 0 || index >= rows.length) {
+        index = -1;
+      }
+      for (let i = 0; i < rows.length; i += 1) {
+        const row = rows[i];
+        if (!row || !row.classList) continue;
+        if (i === index) row.classList.add('bui-grid-row-selected');
+        else row.classList.remove('bui-grid-row-selected');
+      }
+      this.selectedIndex = index;
+    }
+  },
+
+  events: [
+    {
+      for: 'brick:ready:*',
+      on: {
+        fn: function () {
+          this._findTable();
+          this._refreshRows();
+        }
+      }
+    },
+    {
+      for: 'dom:click:*',
+      on: {
+        fn: function (ev) {
+          const table = this.table || this._findTable();
+          if (!table) return;
+          if (!ev || !ev.data || !ev.data.domEvent) return;
+          const target = ev.data.domEvent.target;
+          if (!target) return;
+
+          let node = target;
+          let clickedRow = null;
+          while (node && node !== table) {
+            if (node.tagName && node.tagName.toLowerCase() === 'tr') {
+              clickedRow = node;
+              break;
+            }
+            node = node.parentNode;
+          }
+          if (!clickedRow) return;
+
+          this._refreshRows();
+          const rows = this.rows || [];
+          const index = rows.indexOf(clickedRow);
+          if (index === -1) return;
+          if (this.selectedIndex === index) this._setSelectedIndex(-1);
+          else this._setSelectedIndex(index);
+        }
+      }
+    }
+  ],
+
+  init: function () {
+    this.brick.__gridExt = this;
+    this.table = null;
+    this.rows = [];
+    this.selectedIndex = -1;
+    return true;
+  },
+
+  destroy: function () {
+    this.rows = [];
+    this.table = null;
+    this.selectedIndex = -1;
+    if (this.brick) {
+      delete this.brick.__gridExt;
+    }
+  }
+};
+
+
   /**
    * Per-brick event bus controller.
    * Manages events shaped as "namespace:event:target" with phases before/on/after.
@@ -59,8 +224,8 @@ function EventBusController(brick) {
   var bus = this;
   if (brick) {
     brick.events = {
-      on: function (pattern, phase, priority, handler) {
-        bus.on(pattern, phase, priority, handler);
+      on: function (pattern, phase, priority, handler, meta) {
+        bus.on(pattern, phase, priority, handler, meta);
         return brick; // permet chaining
       },
       off: function (pattern, phase, handler) {
@@ -127,7 +292,19 @@ function EventBusController(brick) {
    * phase: "before" | "on" | "after" (default "on")
    * priority: 0..10 (default 5, 0 = highest priority)
    */
-  EventBusController.prototype.on = function (pattern, phase, priority, handler) {
+  EventBusController.prototype.on = function (pattern, phase, priority, handler, meta) {
+    // signature compatible: on(pattern, phase, priority, handler, meta)
+    // phase optional, priority optional, meta optional
+    if (typeof phase === 'function') {
+      meta = handler;
+      handler = phase;
+      phase = 'on';
+      priority = undefined;
+    } else if (typeof priority === 'function' && typeof handler !== 'function') {
+      meta = handler;
+      handler = priority;
+      priority = undefined;
+    }
     if (typeof handler !== 'function') return;
 
     let ph = phase || 'on';
@@ -141,6 +318,7 @@ function EventBusController(brick) {
       phase: ph,
       handler: handler,
       priority: pr,
+      meta: meta || null
     });
 
     // Sort by priority asc (0 = first)
@@ -172,19 +350,18 @@ function EventBusController(brick) {
 
     // Event object shared across phases
     const ev = {
-      name: eventName, // "ns:event:target"
-      namespace: key.namespace,
-      event: key.event,
-      target: key.target,
-
-      phase: null, // "before" | "on" | "after"
-      data: payload,
       brick: this.brick || null,
-
       cancel: false, // if true, skip "on" phase
-      stopPhase: false, // if true, stop the current phase loop
+      data: payload,
       errors: [], // collected handler errors
-      meta: {}, // free metadata bag
+      event:{
+        phase: null, // "before" | "on" | "after"
+        name: eventName, // "ns:event:target"
+        namespace: key.namespace,
+        event: key.event,
+        target: key.target,
+      },
+      stopPhase: false, // if true, stop the current phase loop
     };
 
     for (let p = 0; p < phases.length; p += 1) {
@@ -193,7 +370,7 @@ function EventBusController(brick) {
       // if canceled, skip "on" phase but still run others
       if (phase === 'on' && ev.cancel) continue;
 
-      ev.phase = phase;
+      ev.event.phase = phase;
 
       for (let i = 0; i < this.handlers.length; i += 1) {
         const h = this.handlers[i];
@@ -208,7 +385,8 @@ function EventBusController(brick) {
             await r; // support async handlers
           }
         } catch (err) {
-          ev.errors.push(err);
+          console.error('Error in handler', h.handler, { pattern: h.pattern, phase: h.phase, meta: h.meta }, err);
+          ev.errors.push({ error: err, meta: h.meta, pattern: h.pattern, phase: h.phase });
           // on handler error, force cancel
           ev.cancel = true;
         }
@@ -241,67 +419,18 @@ function EventBusController(brick) {
 
   BrickUI.controllers = BrickUI.controllers || {};
   BrickUI.controllers.events = EventBusController;
-})(window.BrickUI);
 
-;(function (BrickUI) {
-  // Assegurem BrickUI global
-  BrickUI = BrickUI || (window.BrickUI = window.BrickUI || {});
-
-  // Diccionari de definicions d'extensions:
-  //   BrickUI.extensions.myExt = { _name: "myExt", ... }
-  BrickUI.extensions = BrickUI.extensions || {};
-
-  // Petit helper de registre/base
-  // (ara mateix només serveix per obtenir totes les definicions)
-  BrickUI.controllers.extensionsRegistry = BrickUI.controllers.extensionsRegistry || {
-    /**
-     * Retorna un array amb totes les definicions d'extensions
-     * definides a BrickUI.extensions.*
-     */
-    all: function () {
-      const list = [];
-      const src = BrickUI.extensions || {};
-      for (const key in src) {
-        if (!Object.prototype.hasOwnProperty.call(src, key)) continue;
-        const def = src[key];
-        if (!def || typeof def !== 'object') continue;
-
-        // Si no té _name, fem servir la clau
-        if (!def._name) def._name = key;
-
-        list.push(def);
-      }
-      return list;
-    }
-  };
-})(window.BrickUI);
-
-;(function (BrickUI) {
-  // Assegurem BrickUI i contenidor de controllers
-  BrickUI = BrickUI || (window.BrickUI = window.BrickUI || {});
-  BrickUI.controllers = BrickUI.controllers || {};
-
-  /**
-   * Comprova si una extensio aplica al tipus de Brick actual
-   * _for: '*', 'form', ['form','grid'], ...
-   */
   function matchesFor(def, brick) {
-    if (!def) return false;
-    const rule = def._for;
-    if (!rule) return true;                 // per defecte, aplica a tot
+    const rule = def.for || def._for;
+    if (!rule) return true;
     if (rule === '*') return true;
     if (typeof rule === 'string') return rule === brick.kind;
     if (Array.isArray(rule)) return rule.indexOf(brick.kind) !== -1;
     return false;
   }
 
-  /**
-   * Comprova requeriments de namespaces:
-   * _requires: ['data','dom', ...] -> brick['data'], brick['dom'], ...
-   * (options, events sempre hi son via controllers)
-   */
   function requiresMet(def, brick) {
-    const reqs = def._requires;
+    const reqs = def.requires || def._requires;
     if (!reqs || !reqs.length) return true;
     for (let i = 0; i < reqs.length; i += 1) {
       const ns = reqs[i];
@@ -310,9 +439,6 @@ function EventBusController(brick) {
     return true;
   }
 
-  /**
-   * "field:value:*" -> { ns: 'field', action: 'value', target: '*' }
-   */
   function parseForPattern(pattern) {
     if (!pattern) return { ns: '', action: '', target: '*' };
     const bits = String(pattern).split(':');
@@ -323,21 +449,12 @@ function EventBusController(brick) {
     return { ns: ns, action: action, target: target };
   }
 
-  /**
-   * Controller d'extensions per Brick
-   * @constructor
-   * @param {any} brick
-   */
   function ExtensionsController(brick) {
     this.brick = brick;
-    this.extensions = {};    // map _name -> instancia { name, def, data, ... }
+    this.extensions = {};
     this._destroyHook = false;
   }
 
-  /**
-   * Aplica totes les extensions definides a BrickUI.extensions.*
-   * respectant _for i _requires
-   */
   ExtensionsController.prototype.applyAll = function () {
     const registry = BrickUI.controllers.extensionsRegistry;
     if (!registry || typeof registry.all !== 'function') return;
@@ -361,17 +478,14 @@ function EventBusController(brick) {
           continue;
         }
 
-        // No aplica a aquest brick
-        if (!matchesFor(def, this.brick)) {
+        if (!matchesFor(def.ext, this.brick)) {
           pending.splice(i, 1);
           progressed = true;
           continue;
         }
 
-        // Encara no es compleixen els _requires (ns d'altres extensions)
-        if (!requiresMet(def, this.brick)) continue;
-
-        // Instal?lar
+        if (!requiresMet(def.ext, this.brick)) continue;
+        
         this._install(def);
         pending.splice(i, 1);
         progressed = true;
@@ -381,180 +495,125 @@ function EventBusController(brick) {
     }
 
     if (pending.length) {
-      console.warn(
-        'BrickUI extensions not installed due to unmet requirements',
-        pending
-      );
+      console.warn('BrickUI extensions not installed due to unmet requirements', pending);
     }
 
     this._ensureDestroyHook();
   };
 
-  /**
-   * Instal?la una unica extensio sobre el Brick.
-   * - Crea instancia "ext" amb funcions _private i data = {}
-   * - Exposa l'API (_api) al brick[_ns]
-   * - Registra els listeners (_listeners)
-   */
   ExtensionsController.prototype._install = function (def) {
     const brick = this.brick;
-    const name = def._name || '';
+    const name = def.name || def.ext.ns || null;
+    const ns = def.ext.ns || name;
 
     if (!name) {
-      console.warn('BrickUI extension without _name, skipped', def);
+      console.warn('BrickUI extension without name/ns, skipped', def);
       return;
     }
 
-    if (this.extensions[name]) {
-      // ja instal?lada en aquest brick
-      return;
-    }
+    if (this.extensions[name]) return;
 
-    // Instancia d'extensio per aquest brick (referencia la definicio)
     const ext = {
       name: name,
-      def: def,
-      data: {},
+      //def:def.ext,
+      brick: brick,
     };
 
-    // init() opcional a la definicio: this = brick, primer arg = ext
-    if (typeof def.init === 'function') {
-      try {
-        const initResult = def.init.call(brick, ext);
-        if (initResult === false) {
-          return; // no instal?lar si init retorna false
+    // attach internal extension methods to ext (bound)
+    if (def.ext.extension && typeof def.ext.extension === 'object') {
+      for (const k in def.ext.extension) {
+        if (!Object.prototype.hasOwnProperty.call(def.ext.extension, k)) continue;
+        const fn = def.ext.extension[k];
+        if (typeof fn === 'function') {
+          ext[k] = fn.bind(ext);
         }
+      }
+    }
+
+    // defaults options
+    const defOpts = def.ext.options || def.ext._options;
+    if (defOpts &&
+        brick._controllers &&
+        brick._controllers.options &&
+        typeof brick._controllers.options.setSilent === 'function') {
+      brick._controllers.options.setSilent(defOpts);
+    }
+
+    // expose API on brick namespace
+    if (def.ext.brick && typeof def.ext.brick === 'object') {
+      if (!brick[ns]) brick[ns] = {};
+      const nsObj = brick[ns];
+      for (const apiName in def.ext.brick) {
+        if (!Object.prototype.hasOwnProperty.call(def.ext.brick, apiName)) continue;
+        const apiFn = def.ext.brick[apiName];
+        if (typeof apiFn !== 'function') {
+          console.warn('BrickUI extension "' + name + '" api "' + apiName + '" is not a function');
+          continue;
+        }
+        if (nsObj[apiName]) {
+          console.warn('BrickUI extension overwriting API ' + ns + '.' + apiName);
+        }
+        nsObj[apiName] = apiFn.bind(brick);
+      }
+    }
+
+            // init hook (this === ext)
+    if (typeof def.ext.init === 'function') {
+      try {
+        const res = def.ext.init.call(ext);
+        if (res === false) return;
       } catch (err) {
-        console.error(
-          'BrickUI extension "' + name + '" init() failed',
-          err
-        );
+        console.error('BrickUI extension "' + name + '" init() failed', err);
         return;
       }
     }
 
-    // Funcions privades (_private): les enganxem directament a ext
-    if (Array.isArray(def._private)) {
-      for (let pi = 0; pi < def._private.length; pi += 1) {
-        const privName = def._private[pi];
-        const privFn = def[privName];
-        if (typeof privFn !== 'function') {
-          console.warn(
-            'BrickUI extension "' + name + '" private "' + privName + '" is not a function'
-          );
-          continue;
-        }
-        // ext.myFn2(...) -> def.myFn2.call(brick, ext, ...)
-        ext[privName] = privFn.bind(brick, ext);
-      }
-    }
-
-    // Opcions per defecte cap al controlador d'opcions (si existeix)
-    if (def._options &&
-        brick._controllers &&
-        brick._controllers.options &&
-        typeof brick._controllers.options.set === 'function') {
-      brick._controllers.options.set(def._options);
-    }
-
-    // Exposar API (_api) al namespace del brick (_ns)
-    if (def._ns && Array.isArray(def._api) && def._api.length) {
-      if (!brick[def._ns]) {
-        brick[def._ns] = {};
-      }
-      const nsObj = brick[def._ns];
-
-      for (let ai = 0; ai < def._api.length; ai += 1) {
-        const apiName = def._api[ai];
-        const apiFn = def[apiName];
-
-        if (typeof apiFn !== 'function') {
-          console.warn(
-            'BrickUI extension "' + name + '" api "' + apiName + '" is not a function'
-          );
-          continue;
-        }
-
-        if (nsObj[apiName]) {
-          console.warn(
-            'BrickUI extension overwriting API ' + def._ns + '.' + apiName
-          );
-        }
-
-        // brick.whatever.myfn1(...) -> def.myfn1.call(brick, ext, ...)
-        nsObj[apiName] = apiFn.bind(brick, ext);
-      }
-    }
-
-    // Registrar listeners (_listeners) sobre el bus d'events
-    if (Array.isArray(def._listeners) &&
-        def._listeners.length &&
+    // register event listeners
+    if (Array.isArray(def.ext.events) &&
+        def.ext.events.length &&
         brick._controllers &&
         brick._controllers.events &&
         typeof brick._controllers.events.on === 'function') {
 
-      for (let li = 0; li < def._listeners.length; li += 1) {
-        const listener = def._listeners[li];
-        if (!listener) continue;
+      for (let li = 0; li < def.ext.events.length; li += 1) {
+        const evt = def.ext.events[li];
+        if (!evt) continue;
+        const parsed = parseForPattern(evt.for);
 
-        const parsed = parseForPattern(listener.for);
-        const handlersList = listener.handlers || [];
-
-        for (let hi = 0; hi < handlersList.length; hi += 1) {
-          const hdesc = handlersList[hi];
-          if (!hdesc) continue;
-
-          const phase = hdesc.phase || 'on';
-          const fnName = hdesc.fn;
-          const pr = (typeof hdesc.priority === 'number') ? hdesc.priority : undefined;
-
-          const handlerFn = def[fnName];
-          if (typeof handlerFn !== 'function') {
-            console.warn(
-              'BrickUI extension "' + name + '" handler "' + fnName + '" is not a function'
-            );
-            continue;
-          }
-
+        ['before', 'on', 'after'].forEach(function (phase) {
+          const desc = evt[phase];
+          if (!desc || typeof desc.fn !== 'function') return;
+          const pr = (typeof desc.priority === 'number') ? desc.priority : undefined;
           const pattern = parsed.ns + ':' + parsed.action + ':' + parsed.target;
-
-          // Quan l'event salta, es crida def[fnName].call(brick, ext, eventData)
-          const wrapped = handlerFn.bind(brick, ext);
-
-          brick._controllers.events.on(pattern, phase, pr, wrapped);
-        }
+          const wrapped = desc.fn.bind(ext);
+          brick._controllers.events.on(pattern, phase, pr, wrapped, { ext: name, fn: desc.fn.name || 'anon' });
+        });
       }
     }
 
-    // Guardem la instancia perque l'extensio tingui estat per-brick
     this.extensions[name] = ext;
   };
 
-  /**
-   * Registra un hook per destruir extensions quan el brick es destrueix.
-   * Basat en un event "brick:destroy:*" (fase 'on') al bus d'events.
-   */
   ExtensionsController.prototype._ensureDestroyHook = function () {
     if (this._destroyHook) return;
 
     const brick = this.brick;
     if (!brick ||
-        !brick.controllers ||
-        !brick.controllers.events ||
-        typeof brick.controllers.events.on !== 'function') {
+        !brick._controllers ||
+        !brick._controllers.events ||
+        typeof brick._controllers.events.on !== 'function') {
       return;
     }
 
     this._destroyHook = true;
     const self = this;
 
-    brick.controllers.events.on(
+    brick._controllers.events.on(
       'brick:destroy:*',
       'on',
       0,
       function () {
-        let name;
-        for (name in self.extensions) {
+        for (const name in self.extensions) {
           if (!Object.prototype.hasOwnProperty.call(self.extensions, name)) continue;
           const ext = self.extensions[name];
           if (!ext || !ext.def) continue;
@@ -562,13 +621,9 @@ function EventBusController(brick) {
 
           if (typeof def.destroy === 'function') {
             try {
-              // destroy(ext) amb this === brick
-              def.destroy.call(brick, ext);
+              def.destroy.call(ext);
             } catch (err) {
-              console.error(
-                'BrickUI extension "' + (def._name || name || '?') + '" destroy() failed',
-                err
-              );
+              console.error('BrickUI extension "' + (def.ns || name || '?') + '" destroy() failed', err);
             }
           }
         }
@@ -578,14 +633,41 @@ function EventBusController(brick) {
     );
   };
 
-  // Exposem el controller al namespace de BrickUI
   BrickUI.controllers.extensions = ExtensionsController;
-})(window.BrickUI);
 
-;(function (BrickUI) {
+  // Diccionari de definicions d'extensions:
+  //   BrickUI.extensions.myExt = { ns: "myExt", ... }
+  BrickUI.extensions = BrickUI.extensions || {};
+
+  // Petit helper de registre/base
+  // (ara mateix només serveix per obtenir totes les definicions)
+  BrickUI.controllers.extensionsRegistry = BrickUI.controllers.extensionsRegistry || {
+    /**
+     * Retorna un array amb totes les definicions d'extensions
+     * definides a BrickUI.extensions.*
+     */
+    all: function () {
+      const list = [];
+      const src = BrickUI.extensions || {};
+      for (const key in src) {
+        if (!Object.prototype.hasOwnProperty.call(src, key)) continue;
+        const def = src[key];
+        if (!def || typeof def !== 'object') continue;
+
+        // Si no té _name, fem servir ns o la clau
+        if (!def._name) def._name = def.ns || key;
+
+        list.push({name: key, ext: def});
+      }
+      return list;
+    }
+  };
+
+
   /**
    * Per-brick options controller.
-   * Guarda un objecte pla i ofereix get/set/has/all.
+   * Guarda valors en objectes nested segons rutes amb punts,
+   * mantenint compatibilitat de lectura amb claus planes.
    * @constructor
    * @param {Object} brick
    * @param {Object} initial
@@ -598,7 +680,7 @@ function EventBusController(brick) {
     if (initial && typeof initial === 'object') {
       for (const k in initial) {
         if (Object.prototype.hasOwnProperty.call(initial, k)) {
-          this.data[k] = initial[k];
+          setPath(this.data, toPath(k), initial[k]);
         }
       }
     }
@@ -611,10 +693,16 @@ function EventBusController(brick) {
         return ctrl.get(key, fallback);
       },
 
-      // Async: sempre passa pel eventBus (fireAsync)
-      set: async function (key, value) {
-        await ctrl.set(key, value);
-        return brick; // permet await brick.options.set(...); i chaining
+      // Síncron: dispara events via fire()
+      set: function (key, value) {
+        ctrl.setSync(key, value);
+        return brick;
+      },
+
+      // Async: dispara events via fireAsync()
+      setAsync: async function (key, value) {
+        await ctrl.setAsync(key, value);
+        return brick; // permet await brick.options.setAsync(...); i chaining
       },
 
       has: function (key) {
@@ -623,6 +711,11 @@ function EventBusController(brick) {
 
       all: function () {
         return ctrl.all();
+      },
+
+      setSilent: function (key, value) {
+        ctrl.setSilent(key, value);
+        return brick; // chaining
       }
     };
   }
@@ -660,11 +753,11 @@ function EventBusController(brick) {
     if (!ev) return;
     var payload = ev.data || {};
 
-    // Batch: set({ a:1, b:2 })
+    // Batch: set({ a:1, b:2 }) / set({ dom:{id:'x'} })
     if (payload.batch && payload.values && typeof payload.values === 'object') {
       for (var k in payload.values) {
         if (Object.prototype.hasOwnProperty.call(payload.values, k)) {
-          this.data[k] = payload.values[k];
+          setPath(this.data, toPath(k), payload.values[k]);
         }
       }
       return;
@@ -672,7 +765,7 @@ function EventBusController(brick) {
 
     // Single: set('foo', 123)
     if (typeof payload.key === 'string') {
-      this.data[payload.key] = payload.value;
+      setPath(this.data, toPath(payload.key), payload.value);
     }
   };
 
@@ -684,22 +777,21 @@ function EventBusController(brick) {
    * @param {any} value
    * @returns {Promise<OptionsController>}
    */
-  OptionsController.prototype.set = async function (key, value) {
+  OptionsController.prototype.setAsync = async function (key, value) {
     this._ensureEventsBinding();
 
     var brick = this.brick;
 
-    // OBJECTE: set({ a:1, b:2 })
+    // OBJECTE: set({ a:1, b:2 }) (pot incloure nested)
     if (key && typeof key === 'object' && !Array.isArray(key)) {
       var values = {};
       var previous = {};
 
-      for (var k in key) {
-        if (!Object.prototype.hasOwnProperty.call(key, k)) continue;
-        values[k] = key[k];
-        previous[k] = Object.prototype.hasOwnProperty.call(this.data, k)
-          ? this.data[k]
-          : undefined;
+      flattenEntries(key, '', values);
+
+      for (var vk in values) {
+        if (!Object.prototype.hasOwnProperty.call(values, vk)) continue;
+        previous[vk] = getWithFallback(this.data, vk);
       }
 
       var batchPayload = {
@@ -716,9 +808,7 @@ function EventBusController(brick) {
     }
 
     // SINGLE: set('theme', 'dark')
-    var oldValue = Object.prototype.hasOwnProperty.call(this.data, key)
-      ? this.data[key]
-      : undefined;
+    var oldValue = getWithFallback(this.data, key);
 
     var payload = {
       key: key,
@@ -734,16 +824,84 @@ function EventBusController(brick) {
   };
 
   /**
+   * Set a value or merge an object, disparant events options:value de forma síncrona.
+   * @param {string|Object} key
+   * @param {any} value
+   * @returns {OptionsController}
+   */
+  OptionsController.prototype.setSync = function (key, value) {
+    this._ensureEventsBinding();
+
+    var brick = this.brick;
+
+    // OBJECTE: set({ a:1, b:2 }) (pot incloure nested)
+    if (key && typeof key === 'object' && !Array.isArray(key)) {
+      var values = {};
+      var previous = {};
+
+      flattenEntries(key, '', values);
+
+      for (var vk in values) {
+        if (!Object.prototype.hasOwnProperty.call(values, vk)) continue;
+        previous[vk] = getWithFallback(this.data, vk);
+      }
+
+      var batchPayload = {
+        batch: true,
+        values: values,
+        previous: previous,
+        options: this,
+        brick: brick
+      };
+
+      // sense target: "options:value:"
+      brick.events.fire('options:value:', batchPayload);
+      return this;
+    }
+
+    // SINGLE: set('theme', 'dark')
+    var oldValue = getWithFallback(this.data, key);
+
+    var payload = {
+      key: key,
+      value: value,
+      previous: oldValue,
+      options: this,
+      brick: brick
+    };
+
+    // amb target: "options:value:<key>"
+    brick.events.fire('options:value:' + key, payload);
+    return this;
+  };
+
+  /**
+   * Set sense emetre events.
+   * @param {string|Object} key
+   * @param {any} value
+   * @returns {OptionsController}
+   */
+  OptionsController.prototype.setSilent = function (key, value) {
+    // OBJECTE: setSilent({ a:1, b:2 })
+    if (key && typeof key === 'object' && !Array.isArray(key)) {
+      flattenEntries(key, '', this.data);
+      return this;
+    }
+
+    // SINGLE: setSilent('foo', 123)
+    setPath(this.data, toPath(key), value);
+    return this;
+  };
+
+  /**
    * Get a value by key or return fallback.
    * @param {string} key
    * @param {any} fallback
    * @returns {any}
    */
   OptionsController.prototype.get = function (key, fallback) {
-    if (Object.prototype.hasOwnProperty.call(this.data, key)) {
-      return this.data[key];
-    }
-    return fallback;
+    var val = getWithFallback(this.data, key);
+    return typeof val === 'undefined' ? fallback : val;
   };
 
   /**
@@ -752,6 +910,11 @@ function EventBusController(brick) {
    * @returns {boolean}
    */
   OptionsController.prototype.has = function (key) {
+    var path = toPath(key);
+    if (!path.length) return false;
+    var nested = hasPath(this.data, path);
+    if (nested) return true;
+    // compatibilitat: clau plana
     return Object.prototype.hasOwnProperty.call(this.data, key);
   };
 
@@ -763,130 +926,786 @@ function EventBusController(brick) {
     return Object.assign({}, this.data);
   };
 
-  BrickUI.controllers = BrickUI.controllers || {};
-  BrickUI.controllers.options = OptionsController;
-})(window.BrickUI);
+  // Helpers per gestionar claus amb punts com a rutes nested
+  function toPath(key) {
+    if (!key && key !== 0) return [];
+    if (Array.isArray(key)) return key;
+    return String(key)
+      .split('.')
+      .filter(function (p) { return p !== ''; });
+  }
 
-;(function (BrickUI) {
-  BrickUI = BrickUI || (window.BrickUI = window.BrickUI || {});
-  BrickUI.extensions = BrickUI.extensions || {};
-
-  function resolveElement(value) {
-    if (!value) return null;
-    if (typeof Element !== 'undefined' && value instanceof Element) return value;
-    if (value && value.nodeType === 1) return value;
-    if (typeof value === 'function') {
-      try {
-        return value();
-      } catch (err) {
-        return null;
+  function setPath(obj, path, value) {
+    if (!path.length) return;
+    var cur = obj;
+    for (var i = 0; i < path.length - 1; i += 1) {
+      var seg = path[i];
+      if (!cur[seg] || typeof cur[seg] !== 'object') {
+        cur[seg] = {};
       }
+      cur = cur[seg];
     }
-    return null;
+    cur[path[path.length - 1]] = value;
   }
 
-  function resolveById(id) {
-    if (!id || typeof id !== 'string') return null;
-    if (typeof document === 'undefined') return null;
-    return document.getElementById(id) || null;
-  }
-
-  BrickUI.extensions.dom = {
-    _name: 'dom',
-    _for: '*',
-    _ns: 'dom',
-    _api: ['getElement', 'on', 'off'],
-    _listeners: [
-      { for: 'brick:ready:*', handlers: [{ phase: 'on', fn: 'onReady' }] },
-      { for: 'brick:destroy:*', handlers: [{ phase: 'before', fn: 'onDestroy' }] },
-    ],
-
-    init: function (ext) {
-      const hasOptions = this.options && typeof this.options.get === 'function';
-      const elemOpt = hasOptions ? this.options.get('dom.element', null) : null;
-      const idOpt = hasOptions ? this.options.get('dom.id', null) : null;
-
-      let el = resolveElement(elemOpt);
-      if (!el && idOpt) {
-        el = resolveById(idOpt);
+  function getPath(obj, path) {
+    var cur = obj;
+    for (var i = 0; i < path.length; i += 1) {
+      var seg = path[i];
+      if (!cur || !Object.prototype.hasOwnProperty.call(cur, seg)) {
+        return undefined;
       }
+      cur = cur[seg];
+    }
+    return cur;
+  }
 
-      if (!el) {
-        console.warn('BrickUI dom extension requires a DOM element (options.dom.element) or a valid options.dom.id', this.id);
+  function hasPath(obj, path) {
+    var cur = obj;
+    for (var i = 0; i < path.length; i += 1) {
+      var seg = path[i];
+      if (!cur || !Object.prototype.hasOwnProperty.call(cur, seg)) {
         return false;
       }
+      cur = cur[seg];
+    }
+    return true;
+  }
 
-      if (elemOpt && !resolveElement(elemOpt)) {
-        console.warn('BrickUI dom element must be a DOM node or factory, not an id. Use options.dom.id to resolve by id.', this.id);
+  function getWithFallback(data, key) {
+    var path = toPath(key);
+    if (path.length) {
+      var nested = getPath(data, path);
+      if (typeof nested !== 'undefined') return nested;
+    }
+    // compatibilitat amb claus planes existents
+    if (Object.prototype.hasOwnProperty.call(data, key)) {
+      return data[key];
+    }
+    return undefined;
+  }
+
+  // Extreu claus de tipus objecte en forma de "a.b": valor
+  function flattenEntries(src, prefix, target) {
+    for (var k in src) {
+      if (!Object.prototype.hasOwnProperty.call(src, k)) continue;
+      var path = prefix ? prefix + '.' + k : k;
+      var val = src[k];
+      if (val && typeof val === 'object' && !Array.isArray(val)) {
+        flattenEntries(val, path, target);
+      } else {
+        target[path] = val;
       }
+    }
+  }
 
-      ext.data.element = el;
-      ext.data.listeners = [];
+  BrickUI.controllers = BrickUI.controllers || {};
+  BrickUI.controllers.options = OptionsController;
+
+BrickUI.extensions.domCss = {
+  for: '*',
+  requires: ['dom'],
+  ns: 'css',
+  options: {},
+
+  brick: {
+    addClass: function (className) {
+      const el = this.dom.element();
+      if (!el || !className) return;
+      if (el.classList && el.classList.add) {
+        el.classList.add(className);
+      } else {
+        const cur = el.className || '';
+        if ((' ' + cur + ' ').indexOf(' ' + className + ' ') === -1) {
+          el.className = (cur ? cur + ' ' : '') + className;
+        }
+      }
     },
-
-    getElement: function (ext) {
-      return ext.data.element || null;
+    removeClass: function (className) {
+      const el = this.dom.element();
+      if (!el || !className) return;
+      if (el.classList && el.classList.remove) {
+        el.classList.remove(className);
+      } else {
+        const cur = el.className || '';
+        el.className = (' ' + cur + ' ').replace(' ' + className + ' ', ' ').trim();
+      }
     },
+    hasClass: function (className) {
+      const el = this.dom.element();
+      if (!el || !className) return false;
+      if (el.classList && el.classList.contains) return el.classList.contains(className);
+      const cur = el.className || '';
+      return (' ' + cur + ' ').indexOf(' ' + className + ' ') !== -1;
+    },
+    toggleClass: function (className, force) {
+      const el = this.dom.element();
+      if (!el || !className) return;
+      if (el.classList && typeof el.classList.toggle === 'function') {
+        if (typeof force === 'boolean') el.classList.toggle(className, force);
+        else el.classList.toggle(className);
+      } else {
+        const has = this.css.hasClass(className);
+        if (typeof force === 'boolean') {
+          if (force && !has) this.css.addClass(className);
+          if (!force && has) this.css.removeClass(className);
+        } else {
+          if (has) this.css.removeClass(className);
+          else this.css.addClass(className);
+        }
+      }
+    },
+    show: function () {
+      const el = this.dom.element();
+      if (!el) return;
+      el.style.display = '';
+    },
+    hide: function () {
+      const el = this.dom.element();
+      if (!el) return;
+      el.style.display = 'none';
+    },
+    setStyle: function (prop, value) {
+      const el = this.dom.element();
+      if (!el || !prop) return;
+      el.style[prop] = value;
+    },
+    getStyle: function (prop) {
+      const el = this.dom.element();
+      if (!el || !prop || typeof window === 'undefined' || !window.getComputedStyle) return null;
+      const cs = window.getComputedStyle(el);
+      return cs ? (cs.getPropertyValue(prop) || cs[prop]) : null;
+    },
+    setVar: function (name, value) {
+      const el = this.dom.element();
+      if (!el || !name) return;
+      if (name.indexOf('--') !== 0) name = '--' + name;
+      el.style.setProperty(name, value);
+    },
+    getVar: function (name) {
+      const el = this.dom.element();
+      if (!el || !name || typeof window === 'undefined' || !window.getComputedStyle) return null;
+      if (name.indexOf('--') !== 0) name = '--' + name;
+      const cs = window.getComputedStyle(el);
+      return cs ? cs.getPropertyValue(name) : null;
+    }
+  },
 
-    on: function (ext, type, handler, options) {
-      const el = ext.data.element;
+  extension: {},
+  events: [],
+
+  init: function () {
+    if (!this.brick || !this.brick.dom || typeof this.brick.dom.element !== 'function') {
+      console.warn('BrickUI domCss requires dom extension active', this.brick && this.brick.id);
+      return false;
+    }
+    const el = this.brick.dom.element();
+    if (!el) {
+      console.warn('BrickUI domCss: no DOM element resolved', this.brick && this.brick.id);
+      return false;
+    }
+    return true;
+  },
+
+  destroy: function () {}
+};
+
+BrickUI.extensions.domEvents = {
+  for: '*',
+  requires: ['dom'],
+  ns: 'dom',
+  options: {},
+
+  brick: {},
+
+  extension: {},
+
+  events: [
+    {
+      for: 'brick:ready:*',
+      on: {
+        fn: function () {
+          const el = this.brick.dom.element();
+          if (!el || typeof el.addEventListener !== 'function') return;
+          const listeners = this.brick.options.get("dom.events.listeners",[]);
+          const defaultMap = [
+            { type: 'click', eventName: 'dom:click:*' },
+            { type: 'mouseenter', eventName: 'dom:hover:on' },
+            { type: 'mouseleave', eventName: 'dom:hover:off' },
+            { type: 'mousedown', eventName: 'dom:mouse:down' },
+            { type: 'mouseup', eventName: 'dom:mouse:up' },
+          ];
+
+          for (let i = 0; i < defaultMap.length; i += 1) {
+            const entry = defaultMap[i];
+            const handler = function (domEvent) {
+              this.brick.events.fire(entry.eventName, {
+                domEvent: domEvent,
+                element: el,
+              });
+            };
+            el.addEventListener(entry.type, handler.bind(this));
+            listeners.push({ type: entry.type, handler: handler, source: 'default' });
+          }
+          this.brick.options.setSilent("dom.events.listeners", listeners);
+        }
+      }
+    },
+    {
+      for: 'brick:destroy:*',
+      before: {
+        fn: function () {
+          const el = this.brick && this.brick.dom.element && this.brick.dom.element();
+          if (!el || typeof el.removeEventListener !== 'function') return;
+          const listeners = this._listeners || [];
+          for (let i = 0; i < listeners.length; i += 1) {
+            const ln = listeners[i];
+            el.removeEventListener(ln.type, ln.handler, ln.options);
+          }
+          this._listeners = [];
+        }
+      }
+    }
+  ],
+
+  init: function() {},
+  destroy: function () {}
+};
+
+BrickUI.extensions.dom = {
+  for: '*',
+  requires: [],
+  ns: 'dom',
+  options: {},
+
+  brick: {
+    element: function () {
+      return this.options.get('dom.element', null);
+    },
+    on: function (type, handler, options) {
+      const el = this.options.get('dom.element',null);
       if (!el || typeof el.addEventListener !== 'function' || typeof handler !== 'function') return;
       el.addEventListener(type, handler, options);
-      ext.data.listeners.push({ type: type, handler: handler, options: options, source: 'api' });
+      const listeners = this.brick.options.get('dom.listeners',[]);
+      if (!Array.isArray(listeners)) listeners = [];
+      listeners.push({ type: type, handler: handler, options: options, source: 'api' });
     },
-
-    off: function (ext, type, handler, options) {
-      const el = ext.data.element;
+    off: function (type, handler, options) {
+      const el = this.options.get('dom.element',null);
       if (!el || typeof el.removeEventListener !== 'function' || typeof handler !== 'function') return;
       el.removeEventListener(type, handler, options);
+      const listeners = this.brick.options.get('dom.listeners',[]);
+      for (let i = listeners.length - 1; i >= 0; i -= 1) {
+        const ln = listeners[i];
+        if (ln.type === type && ln.handler === handler) {
+          listeners.splice(i, 1);
+        }
+      }
+    }
+  },
 
-      if (Array.isArray(ext.data.listeners)) {
-        for (let i = ext.data.listeners.length - 1; i >= 0; i -= 1) {
-          const ln = ext.data.listeners[i];
-          if (ln.type === type && ln.handler === handler) {
-            ext.data.listeners.splice(i, 1);
+  extension: {
+    _resolveElement: function (value) {
+      if (!value) return null;
+      if (typeof Element !== 'undefined' && value instanceof Element) return value;
+      if (value && value.nodeType === 1) return value;
+      if (typeof value === 'function') {
+        try {
+          return value();
+        } catch (err) {
+          return null;
+        }
+      }
+      return null;
+    },
+    _resolveById: function (id) {
+      if (!id || typeof id !== 'string') return null;
+      if (typeof document === 'undefined') return null;
+      return document.getElementById(id) || null;
+    }
+  },
+
+  events: [],
+
+  init: function () {
+    if (!this.brick) return false;
+    const elemOpt = this.brick.options.get('dom.element', null);
+    const idOpt = this.brick.options.get('dom.id', null);
+
+    let el = this._resolveElement(elemOpt);
+    if (!el && idOpt) {
+      el = this._resolveById(idOpt);
+    }
+
+    if (!el) {
+      console.warn('BrickUI dom extension requires a DOM element (options.dom.element) or a valid options.dom.id', this.brick.id);
+      return false;
+    }
+
+    if (elemOpt && !this._resolveElement(elemOpt)) {
+      console.warn('BrickUI dom element must be a DOM node or factory, not an id. Use options.dom.id to resolve by id.', this.brick.id);
+    }
+
+    this.brick.options.set('dom.element', el);
+    return true;
+  },
+
+  destroy: function () {
+    const el = this.brick.options.get('dom.element',null);
+    const listeners = this.brick.options.get('dom.listeners',null);;
+    if (el && Array.isArray(listeners)) {
+      for (let i = 0; i < listeners.length; i += 1) {
+        const ln = listeners[i];
+        if (ln && ln.type && ln.handler) {
+          el.removeEventListener(ln.type, ln.handler, ln.options);
+        }
+      }
+    }
+  }
+};
+
+BrickUI.extensions.columns = {
+  for: ['grid'],
+  requires: ['dom', 'store'],
+  ns: 'columns',
+  options: {},
+
+  brick: {
+    get: function () {
+      return this.options.get("grid.columns",[]);
+    },
+    sort: function (field, dir) {
+      const cols = this.columns.get();
+      const colDef = cols.find(function (c) { return c && c.datafield === field; }) || {};
+      const state = this.options.get("grid.sort", { field: null, dir: null });
+      let nextDir = dir;
+      if (nextDir !== 'asc' && nextDir !== 'desc') {
+        nextDir = (state.field === field && state.dir === 'asc') ? 'desc' : 'asc';
+      }
+
+      this.events.fire('store:data:sort', {
+        field: field,
+        dir: nextDir,
+        compare: typeof colDef.sort === 'function' ? colDef.sort : null
+      });
+
+      return nextDir;
+    }
+  },
+
+  extension: {},
+
+  events: [
+    {
+      for: 'brick:ready:*',
+      on: {
+        fn: function () {
+          const columns = this.brick.columns.get();
+          const root = this.brick.dom.element && this.brick.dom.element();
+          if (!root) return;
+
+          const table = root.tagName && root.tagName.toLowerCase() === 'table'
+            ? root
+            : root.querySelector && root.querySelector('table');
+          if (!table) return;
+
+          let thead = (table.tHead) ? table.tHead : table.querySelector('thead');
+          if (!thead) {
+            thead = table.createTHead ? table.createTHead() : table.insertBefore(document.createElement('thead'), table.firstChild);
+          }
+
+          const row = thead.rows && thead.rows[0] ? thead.rows[0] : thead.insertRow();
+          row.innerHTML = '';
+          const brick = this.brick;
+          for (let i = 0; i < columns.length; i += 1) {
+            const col = columns[i] || {};
+            const th = document.createElement('th');
+            th.textContent = col.label || col.datafield || '';
+            if (col.sortable && col.datafield) {
+              th.classList.add('bui-sortable');
+              th.addEventListener('click', (function (colDef) {
+                return function () {
+                  brick.columns.sort(colDef.datafield, null);
+                };
+              })(col));
+            }
+            row.appendChild(th);
           }
         }
       }
     },
+    {
+      for: 'store:data:sort',
+      after: {
+        fn: function (ev) {
+          this.brick.options.setSilent("grid.sort",{ field: ev.field, dir: ev.dir || 'asc' });
+        }
+      }
+    }
+  ],
 
-    onReady: function (ext) {
-      const el = ext.data.element;
-      if (!el || typeof el.addEventListener !== 'function') return;
+  init: function () {},
 
-      const brick = this;
-      const defaultMap = [
-        { type: 'click', eventName: 'dom:click:*' },
-        { type: 'mouseenter', eventName: 'dom:hover:on' },
-        { type: 'mouseleave', eventName: 'dom:hover:off' },
-        { type: 'mousedown', eventName: 'dom:mouse:down' },
-        { type: 'mouseup', eventName: 'dom:mouse:up' },
-      ];
+  destroy: function () {},
 
-      for (let i = 0; i < defaultMap.length; i += 1) {
-        const entry = defaultMap[i];
-        const handler = function (domEvent) {
-          brick.events.fire(entry.eventName, {
-            domEvent: domEvent,
-            element: el,
-          });
-        };
-        el.addEventListener(entry.type, handler);
-        ext.data.listeners.push({ type: entry.type, handler: handler, source: 'default' });
+  options:{
+    grid:{
+        columns: [
+            { datafield: 'code', label: 'Code', sortable: true },
+            { datafield: 'name', label: 'Name', sortable: true },
+        ]
+    }
+  }
+};
+
+BrickUI.extensions.rows = {
+  for: ['grid'],
+  requires: ['dom', 'store', 'columns'],
+  ns: 'rows',
+  options: {},
+
+  brick: {
+    render: function () {
+      const root = this.dom.element();
+      if (!root) return;
+
+      const table = root.tagName && root.tagName.toLowerCase() === 'table'
+        ? root
+        : root.querySelector && root.querySelector('table');
+      if (!table) return;
+
+      const columns = this.columns.get();
+      const rows = this.store.load();
+
+      let tbody = (table.tBodies && table.tBodies.length)
+        ? table.tBodies[0]
+        : table.querySelector('tbody');
+      if (!tbody) {
+        tbody = document.createElement('tbody');
+        table.appendChild(tbody);
+      }
+      tbody.innerHTML = '';
+
+      for (let r = 0; r < rows.length; r += 1) {
+        const record = rows[r] || {};
+        const tr = document.createElement('tr');
+        for (let c = 0; c < columns.length; c += 1) {
+          const col = columns[c] || {};
+          const field = col.datafield;
+          const td = document.createElement('td');
+          td.textContent = (field && record[field] !== undefined && record[field] !== null)
+            ? record[field]
+            : '';
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+    }
+  },
+
+  extension: {},
+
+  events: [
+    {
+      for: 'brick:ready:*',
+      on: {
+        fn: function () {
+          this.brick.rows.render();
+        }
       }
     },
-
-    onDestroy: function (ext) {
-      const el = ext.data.element;
-      if (!el || typeof el.removeEventListener !== 'function') return;
-
-      const listeners = ext.data.listeners || [];
-      for (let i = 0; i < listeners.length; i += 1) {
-        const ln = listeners[i];
-        el.removeEventListener(ln.type, ln.handler, ln.options);
+    {
+      for: 'store:data:*',
+      after: {
+        fn: function (ev) {
+          this.brick.rows.render();
+        }
       }
+    }
+  ],
 
-      ext.data.listeners = [];
+  init: function () {},
+
+  destroy: function () {}
+};
+
+const DATA_SAMPLE_ROWS = [
+  { code: '1', name: 'one', key: 1 },
+  { code: '2', name: 'two', key: 2 },
+  { code: '3', name: 'three', key: 3 },
+  { code: '4', name: 'four', key: 4 },
+  { code: '5', name: 'five', key: 5 },
+  { code: '6', name: 'six', key: 6 },
+  { code: '7', name: 'seven', key: 7 },
+  { code: '8', name: 'eight', key: 8 },
+  { code: '9', name: 'nine', key: 9 },
+  { code: '10', name: 'ten', key: 10 },
+  { code: '11', name: 'eleven', key: 11 },
+  { code: '12', name: 'twelve', key: 12 },
+  { code: '13', name: 'thirteen', key: 13 },
+  { code: '14', name: 'fourteen', key: 14 },
+  { code: '15', name: 'fifteen', key: 15 },
+  { code: '16', name: 'sixteen', key: 16 },
+  { code: '17', name: 'seventeen', key: 17 },
+  { code: '18', name: 'eighteen', key: 18 },
+  { code: '19', name: 'nineteen', key: 19 },
+  { code: '20', name: 'twenty', key: 20 },
+];
+
+BrickUI.extensions.store = {
+  for: ['form', 'grid'],
+  requires: [],
+  ns: 'store',
+  options: {},
+
+  // API pública sobre el brick (this === brick)
+  brick: {
+    load: function () {
+      return this.options.get('store.data',[]);
     },
+    set: function (data) {
+      if(data === null) return;
+      const previous = this.options.get('store.data',[]);
+      data = Array.isArray(data) ? data.slice() : [data];
+      
+      this.events.fire('store:data:set', {
+          previous: previous,
+          data: data
+        });
+   
+      return data;
+    },
+    setAsync: async function (data) {
+      const previous = this.options.get('store.data',[]);
+      data = Array.isArray(data) ? data.slice() : [];
+      
+      await this.events.fireAsync('store:data:set', {
+          previous: previous,
+          data: data
+        });
+   
+      return data;
+    },    
+    all: function () {
+      return this.store.load();
+    },
+    get: function (index) {
+      const arr = this.store.load();
+      if (typeof index !== 'number') return null;
+      if (index < 0 || index >= arr.length) return null;
+      return arr[index];
+    }
+  },
+
+  // Helpers interns (this === ext)
+  extension: {
+    _normalizeArray: function (value, fallback) {
+      if (Array.isArray(value)) return value.slice();
+      return Array.isArray(fallback) ? fallback.slice() : [];
+    },
+    _sortRows: function (rows, field, dir, compareFn) {
+      const arr = Array.isArray(rows) ? rows.slice() : [];
+      const cmp = typeof compareFn === 'function'
+        ? function (a, b) { return compareFn(a, b, dir); }
+        : function (a, b) {
+            const va = a && Object.prototype.hasOwnProperty.call(a, field) ? a[field] : undefined;
+            const vb = b && Object.prototype.hasOwnProperty.call(b, field) ? b[field] : undefined;
+            let res = 0;
+            if (va === vb) res = 0;
+            else if (va === undefined || va === null) res = -1;
+            else if (vb === undefined || vb === null) res = 1;
+            else if (typeof va === 'number' && typeof vb === 'number') res = va - vb;
+            else res = String(va).localeCompare(String(vb));
+            return dir === 'desc' ? -res : res;
+          };
+      arr.sort(cmp);
+      return arr;
+    }
+  },
+
+  events: [
+    {
+      for: 'brick:ready:*',
+      on: {
+        fn: function (ev) {
+          //const storeData = this.brick.options.get('store:data', null);
+          const storeData = this._normalizeArray(DATA_SAMPLE_ROWS, []);
+          this.brick.options.setSilent('store.data',storeData);
+        }
+      }
+    },
+    {
+      for: 'store:data:set',
+      on: {
+        fn: function (ev) {
+          const payload = (ev && ev.data) || null;
+          this.brick.options.setSilent('store.data',payload);
+        }
+      }
+    },
+    {
+      for: 'store:data:sort',
+      on: {
+        fn: function (ev) {
+          const payload = (ev && ev.data) || {};
+          
+          const field = payload.field || null;
+          const dir = payload.dir || 'asc';
+
+          if (!field || !this.brick) return;
+          const sorted = this._sortRows(this.brick.store.load(), field, dir, payload.compare);
+          this.brick.options.setSilent("store.data",sorted);
+          ev.field = field;
+          ev.dir = dir;
+          ev.data = sorted;
+        }
+      }
+    }
+  ],
+
+  init: function () {},
+
+  destroy: function () {}
+};
+
+  BrickUI.extensions.dataStore = {
+    name: 'data',
+    for: ['form', 'grid'],
+    ns: 'data',
+    api: {
+        load: function(){
+
+        },
+        set: function(){
+
+        }
+    },
+    listeners: [
+        { 
+            for: 'data:sort:*',
+            phases: {
+                on: function(){
+
+                }
+            }
+        }
+    ],
+    events:[
+        {
+            for:'data:sort:*',
+            before: {
+                fn: function(){
+
+                },
+                priority:5,
+            },
+            on: {
+                fn: function(){
+
+                },
+                priority:5,
+            }
+        }
+    ],
+    private: {
+        private1: function(){
+
+        },
+        private2: function(){
+
+        }
+    },    
+  }
+
+  BrickUI.base = BrickUI.base || {};
+
+  const registry = {
+    list: [],
+    byId: {},
   };
+
+  function readKind(el) {
+    if (!el) return undefined;
+    // data-kind o data-brick-kind
+    const k =
+      el.getAttribute('brick-kind') ||
+      el.getAttribute('data-kind') ||
+      el.getAttribute('data-brick-kind') ||
+      (el.dataset && (el.dataset.kind || el.dataset.brickKind));
+    return k ? String(k).toLowerCase() : undefined;
+  }
+
+  function createBrickFromElement(el) {
+    if (!el) return null;
+
+    // Ja inicialitzat?
+    if (el.__brickInstance) return el.__brickInstance;
+
+    const opts = {};
+
+    if (el.id) {
+      opts.id = el.id;
+    }
+
+    const kind = readKind(el);
+    if (kind) {
+      opts.kind = kind;
+    }
+
+    // NESTED: tot el que és de DOM sota dom.{}
+    opts.dom = {
+      id: el.id || null,
+      element: el
+    };
+
+    const brick = new BrickUI.brick(opts);
+
+    el.__brickInstance = brick;
+    registry.list.push(brick);
+    registry.byId[brick.id] = brick;
+    console.log("Brick",el.id,brick);
+    return brick;
+  }
+
+  function bootstrap(root) {
+    if (typeof document === 'undefined') return [];
+    const scope = root || document;
+    if (!scope.querySelectorAll) return [];
+
+    const nodes = scope.querySelectorAll('.bui');
+    const created = [];
+
+    for (let i = 0; i < nodes.length; i++) {
+      const brick = createBrickFromElement(nodes[i]);
+      if (brick) created.push(brick);
+    }
+
+    return created;
+  }
+
+  BrickUI.base.bootstrap = bootstrap;
+  BrickUI.runtime = BrickUI.runtime || {};
+  BrickUI.runtime.bricks = registry.list || [];
+  BrickUI.base.getBrick = function (id) {
+    return registry.byId[id] || null;
+  };
+
+  if (typeof document !== 'undefined') {
+    var bootstrapped = false;
+    function runOnce() {
+      if (bootstrapped) return;
+      bootstrapped = true;
+      bootstrap();
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function () {
+        runOnce();
+      });
+    } else {
+      // DOM ja llest: posposem al next tick per deixar executar scripts defer restants
+      setTimeout(runOnce, 0);
+    }
+  }
+
 })(window.BrickUI);

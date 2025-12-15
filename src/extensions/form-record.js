@@ -1,5 +1,5 @@
 VanillaBrick.extensions.record = {
-    for: ['form'],
+    for: [{ host: 'brick', kind: 'form' }],
     requires: ['dom', 'store'],
     ns: 'record',
     options: {},

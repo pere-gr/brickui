@@ -1,5 +1,5 @@
 VanillaBrick.extensions.domEvents = {
-  for: '*',
+  for: [{ host: 'brick', kind: '*' }],
   requires: ['dom'],
   ns: 'dom',
   options: {},

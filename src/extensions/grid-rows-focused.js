@@ -1,5 +1,5 @@
 VanillaBrick.extensions.rowsFocused = {
-    for: ['grid'],
+  for: [{ host: 'brick', kind: 'grid' }],
     requires: ['dom', 'rows', 'store'],
     ns: 'rowsFocused',
     options: {},

@@ -22,7 +22,10 @@ const DATA_SAMPLE_ROWS = [
 ];
 
 VanillaBrick.extensions.store = {
-  for: ['form', 'grid'],
+  for: [
+    { host: 'brick', kind: 'form' },
+    { host: 'brick', kind: 'grid' }
+  ],
   requires: [],
   ns: 'store',
   options: {},

@@ -3,6 +3,7 @@
   global.VanillaBrick = {
     base: {},
     components: {},
+    configs:{},
     controllers: {},
     brick: null,
     extensions: {},

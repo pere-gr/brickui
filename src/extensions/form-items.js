@@ -1,5 +1,5 @@
 VanillaBrick.extensions.items = {
-    for: ['form'],
+    for: [{ host: 'brick', kind: 'form' }],
     requires: ['dom'],
     ns: 'items',
     options: {},

@@ -1,13 +1,21 @@
 VanillaBrick.extensions.wire = {
-    for: ['*'], // Available to all bricks (except maybe services themselves? But services might want to use wire too)
+    for: [{ host: 'brick', kind: '*' }], // Available to all bricks
     requires: [], // No strict requirements
     ns: 'wire',
     options: {},
 
     brick: {
         send: function (eventName, data) {
-            // Send message via wire
-            this.events.fire('wire:outbound', { event: eventName, data: data });
+            console.warn("send",eventName, data);
+            console.log("this",this);
+            if (!this.service) this.ext._connect();
+            if (!this.service) return; // Still no service?
+            console.log("this.service",this.service);
+            this.service.events.fire('wire:message', {
+                from: this.brick.id,
+                event: eventName,
+                data: data
+            });
         }
     },
 
@@ -15,25 +23,19 @@ VanillaBrick.extensions.wire = {
         service: null,
 
         _connect: function () {
-            if (this.service) return;
+
+            if (this.ext._service) return;
+
+            let wireKind = this.brick.options.get("wire",null);
+            if (wireKind == null) return;
 
             // Connect to WireService
             if (VanillaBrick.service) {
-                this.service = VanillaBrick.service('WireService');
+                this.ext._service = VanillaBrick.service('WireService');
             }
 
-            if (this.service) {
-                const self = this;
-                // Listen to broadcasts
-                // We need to listen to the service's events.
-                // Assuming service is a brick structure with .events controller.
-                this.service.events.on('wire:broadcast', function (ev) {
-                    self._handleBroadcast(ev);
-                });
-
-                // Also listen for outbound from this brick to forward to service
-                // (Handled in events below or directly via brick method calling internal helper?)
-                // The brick method fires 'wire:outbound', so we listen to it here.
+            if (this.ext._service) {
+                this.ext._service.wire.register(this.brick,this.brick.options.get("wire",{}));
             }
         },
 

@@ -1,5 +1,5 @@
 VanillaBrick.extensions.dom = {
-  for: '*',
+  for: [{ host: 'brick', kind: '*' }],
   requires: [],
   ns: 'dom',
   options: {},

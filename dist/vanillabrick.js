@@ -3,6 +3,7 @@
   global.VanillaBrick = {
     base: {},
     components: {},
+    configs:{},
     controllers: {},
     brick: null,
     extensions: {},
@@ -23,9 +24,16 @@
 function Brick(options) {
   const opts = options && typeof options === 'object' ? Object.assign({}, options) : {};
   opts.id = opts.id || this._nextId();
+  opts.host = (opts.host || 'brick').toLowerCase();
   opts.kind = (opts.kind || 'brick').toLowerCase();
   Object.defineProperty(this, 'id', {
     value: opts.id,
+    writable: false,
+    configurable: false,
+    enumerable: true
+  });
+  Object.defineProperty(this, 'host', {
+    value: opts.host,
     writable: false,
     configurable: false,
     enumerable: true
@@ -76,7 +84,6 @@ Object.defineProperty(Brick.prototype, '_nextId', {
 });
 
 VanillaBrick.brick = Brick;
-
 
 VanillaBrick.components.form = {
     for: ['form'],
@@ -814,32 +821,44 @@ VanillaBrick.controllers.extensionsRegistry = VanillaBrick.controllers.extension
 
   /**
    * Retorna un array amb totes les definicions d'extensions
-   * filtrades per brick kind i amb dependències resoltes (topological sort).
+   * filtrades per host/kind i amb dependències resoltes (topological sort).
    *
-   * @param {Object} brick - Instancia del brick o objecte de metadates {kind: '...'}
+   * @param {Object} brick - Instancia del brick o objecte de metadates {host:'brick', kind:'grid'}
    */
   all: function (brick) {
     if (!brick || typeof brick !== 'object') {
-      // Legacy/Fallback: return everything if no context is provided
-      // (Though plan said strictly require it, we can fallback to old behavior or empty)
-      // Let's stick strictly to plan: Empty or try to work?
-      // User said "early-alpha i ens podem carregar el que volguem".
-      // Let's return empty or warn. Returning empty is safer.
       console.warn('ExtensionsRegistry.all() called without brick context');
       return [];
     }
 
+    const host = (brick.host || 'brick').toLowerCase();
     const kind = brick.kind;
     if (!kind) return [];
 
-    if (this._cache[kind]) {
-      return this._cache[kind];
+    const cacheKey = host + '::' + kind;
+    if (this._cache[cacheKey]) {
+      return this._cache[cacheKey];
     }
 
     const src = VanillaBrick.extensions || {};
     const candidates = {};
 
-    // 1. Initial Filter by Kind (and prepare candidates map)
+    function normalizeRule(rule) {
+      if (!rule || typeof rule !== 'object') return null;
+      const rHost = (rule.host || 'brick').toLowerCase();
+      const rKind = typeof rule.kind === 'string' ? rule.kind.toLowerCase() : '';
+      if (!rKind) return null;
+      return { host: rHost, kind: rKind };
+    }
+
+    function matchesRule(rule, currentHost, currentKind) {
+      if (!rule) return false;
+      const hostMatch = rule.host === '*' || rule.host === currentHost;
+      const kindMatch = rule.kind === '*' || rule.kind === currentKind;
+      return hostMatch && kindMatch;
+    }
+
+    // 1. Initial Filter by host/kind (and prepare candidates map)
     for (const key in src) {
       if (!Object.prototype.hasOwnProperty.call(src, key)) continue;
       const def = src[key];
@@ -848,16 +867,20 @@ VanillaBrick.controllers.extensionsRegistry = VanillaBrick.controllers.extension
       // Normalitzar el nom intern
       if (!def._name) def._name = def.ns || key;
 
-      // Check 'for' rule
-      const rule = def.for || def._for;
-      let match = false;
+      const rules = def.for;
+      if (!Array.isArray(rules) || !rules.length) {
+        console.warn('VanillaBrick extension without valid `for` array, skipped', def._name || key);
+        continue;
+      }
 
-      if (!rule || rule === '*') {
-        match = true;
-      } else if (typeof rule === 'string') {
-        match = (rule === kind);
-      } else if (Array.isArray(rule)) {
-        match = (rule.indexOf(kind) !== -1);
+      let match = false;
+      for (let ri = 0; ri < rules.length; ri += 1) {
+        const rule = normalizeRule(rules[ri]);
+        if (!rule) continue;
+        if (matchesRule(rule, host, kind)) {
+          match = true;
+          break;
+        }
       }
 
       if (match) {
@@ -903,7 +926,7 @@ VanillaBrick.controllers.extensionsRegistry = VanillaBrick.controllers.extension
       visit(name);
     }
 
-    this._cache[kind] = sortedList;
+    this._cache[cacheKey] = sortedList;
     return sortedList;
   }
 };
@@ -1453,7 +1476,7 @@ StatusController.prototype.is = function (status) {
 VanillaBrick.controllers.status = StatusController;
 
 VanillaBrick.extensions.domCss = {
-  for: '*',
+  for: [{ host: 'brick', kind: '*' }],
   requires: ['dom'],
   ns: 'css',
   options: {},
@@ -1560,9 +1583,8 @@ VanillaBrick.extensions.domCss = {
   destroy: function () {}
 };
 
-
 VanillaBrick.extensions.domEvents = {
-  for: '*',
+  for: [{ host: 'brick', kind: '*' }],
   requires: ['dom'],
   ns: 'dom',
   options: {},
@@ -1627,7 +1649,7 @@ VanillaBrick.extensions.domEvents = {
 };
 
 VanillaBrick.extensions.dom = {
-  for: '*',
+  for: [{ host: 'brick', kind: '*' }],
   requires: [],
   ns: 'dom',
   options: {},
@@ -1722,7 +1744,7 @@ VanillaBrick.extensions.dom = {
 };
 
 VanillaBrick.extensions.items = {
-    for: ['form'],
+    for: [{ host: 'brick', kind: 'form' }],
     requires: ['dom'],
     ns: 'items',
     options: {},
@@ -1926,7 +1948,7 @@ VanillaBrick.extensions.items = {
 };
 
 VanillaBrick.extensions.record = {
-    for: ['form'],
+    for: [{ host: 'brick', kind: 'form' }],
     requires: ['dom', 'store'],
     ns: 'record',
     options: {},
@@ -1999,7 +2021,7 @@ VanillaBrick.extensions.record = {
 };
 
 VanillaBrick.extensions.columns = {
-  for: ['grid'],
+  for: [{ host: 'brick', kind: 'grid' }],
   requires: ['dom', 'store'],
   ns: 'columns',
   options: {},
@@ -2093,9 +2115,8 @@ VanillaBrick.extensions.columns = {
 };
 
 
-
 VanillaBrick.extensions.rowsFocused = {
-    for: ['grid'],
+  for: [{ host: 'brick', kind: 'grid' }],
     requires: ['dom', 'rows', 'store'],
     ns: 'rowsFocused',
     options: {},
@@ -2172,7 +2193,7 @@ VanillaBrick.extensions.rowsFocused = {
 };
 
 VanillaBrick.extensions.rows = {
-  for: ['grid'],
+  for: [{ host: 'brick', kind: 'grid' }],
   requires: ['dom', 'store', 'columns'],
   ns: 'rows',
   options: {},
@@ -2242,7 +2263,6 @@ VanillaBrick.extensions.rows = {
   destroy: function () { }
 };
 
-
 const DATA_SAMPLE_ROWS = [
   { code: '1', name: 'one', key: 1 },
   { code: '2', name: 'two', key: 2 },
@@ -2267,7 +2287,10 @@ const DATA_SAMPLE_ROWS = [
 ];
 
 VanillaBrick.extensions.store = {
-  for: ['form', 'grid'],
+  for: [
+    { host: 'brick', kind: 'form' },
+    { host: 'brick', kind: 'grid' }
+  ],
   requires: [],
   ns: 'store',
   options: {},
@@ -2384,15 +2407,23 @@ VanillaBrick.extensions.store = {
 };
 
 VanillaBrick.extensions.wire = {
-    for: ['*'], // Available to all bricks (except maybe services themselves? But services might want to use wire too)
+    for: [{ host: 'brick', kind: '*' }], // Available to all bricks
     requires: [], // No strict requirements
     ns: 'wire',
     options: {},
 
     brick: {
         send: function (eventName, data) {
-            // Send message via wire
-            this.events.fire('wire:outbound', { event: eventName, data: data });
+            console.warn("send",eventName, data);
+            console.log("this",this);
+            if (!this.service) this.ext._connect();
+            if (!this.service) return; // Still no service?
+            console.log("this.service",this.service);
+            this.service.events.fire('wire:message', {
+                from: this.brick.id,
+                event: eventName,
+                data: data
+            });
         }
     },
 
@@ -2400,25 +2431,19 @@ VanillaBrick.extensions.wire = {
         service: null,
 
         _connect: function () {
-            if (this.service) return;
+
+            if (this.ext._service) return;
+
+            let wireKind = this.brick.options.get("wire",null);
+            if (wireKind == null) return;
 
             // Connect to WireService
             if (VanillaBrick.service) {
-                this.service = VanillaBrick.service('WireService');
+                this.ext._service = VanillaBrick.service('WireService');
             }
 
-            if (this.service) {
-                const self = this;
-                // Listen to broadcasts
-                // We need to listen to the service's events.
-                // Assuming service is a brick structure with .events controller.
-                this.service.events.on('wire:broadcast', function (ev) {
-                    self._handleBroadcast(ev);
-                });
-
-                // Also listen for outbound from this brick to forward to service
-                // (Handled in events below or directly via brick method calling internal helper?)
-                // The brick method fires 'wire:outbound', so we listen to it here.
+            if (this.ext._service) {
+                this.ext._service.wire.register(this.brick,this.brick.options.get("wire",{}));
             }
         },
 
@@ -2485,28 +2510,72 @@ VanillaBrick.extensions.wire = {
     destroy: function () { }
 };
 
-VanillaBrick.services.WireService = {
-    kind: 'wire-service',
+VanillaBrick.extensions.wireservice = {
+    for: [{ host: 'service', kind: 'wire' }], // Available to all bricks
+    requires: [], // No strict requirements
+    ns: 'wire',
+    options: {},
+
+    brick: {
+        register: function (brick,config) {
+            console.log("register",brick,config);
+        },
+        login: function (brick,config) {
+            console.log("login",this,brick,config);
+        }
+    },
     events: [
         {
-            for: 'wire:message',
+            for: 'wire:send:register',
             on: {
                 fn: function (ev) {
-                    const payload = ev.data || {};
-                    this.brick.events.fire('wire:broadcast', payload);
+                    console.log("",ev)
                 }
             }
-        }
-    ]
+        },
+    ],
+}
+
+VanillaBrick.services.WireService = {
+    kind: 'wire',
+
 };
 
 
   VanillaBrick.base = VanillaBrick.base || {};
+  VanillaBrick.configs = VanillaBrick.configs || {};
 
   const registry = {
     list: [],
     byId: {},
   };
+
+  function loadConfigs(scope) {
+    if (typeof document === 'undefined') return;
+    const root = scope || document;
+    if (!root.querySelectorAll) return;
+    const scripts = root.querySelectorAll('script[type="application/json"][data-brick]');
+    for (let i = 0; i < scripts.length; i += 1) {
+      const node = scripts[i];
+      const raw = node.textContent || '';
+      if (!raw.trim()) continue;
+      try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') continue;
+        for (const key in parsed) {
+          if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
+          const base = (VanillaBrick.configs[key] && typeof VanillaBrick.configs[key] === 'object')
+            ? VanillaBrick.configs[key]
+            : {};
+          const next = parsed[key];
+          if (!next || typeof next !== 'object') continue;
+          VanillaBrick.configs[key] = Object.assign({}, base, next);
+        }
+      } catch (err) {
+        console.warn('VanillaBrick: invalid JSON in data-brick config', err);
+      }
+    }
+  }
 
   function readKind(el) {
     if (!el) return undefined;
@@ -2526,6 +2595,11 @@ VanillaBrick.services.WireService = {
     if (el.__brickInstance) return el.__brickInstance;
 
     const opts = {};
+
+    const config = el.id && VanillaBrick.configs ? VanillaBrick.configs[el.id] : null;
+    if (config && typeof config === 'object') {
+      Object.assign(opts, config);
+    }
 
     if (el.id) {
       opts.id = el.id;
@@ -2555,6 +2629,9 @@ VanillaBrick.services.WireService = {
     if (typeof document === 'undefined') return [];
     const scope = root || document;
     if (!scope.querySelectorAll) return [];
+
+    // Carrega tots els blocs de configuració abans de crear bricks
+    loadConfigs(scope);
 
     const nodes = scope.querySelectorAll('.vb');
     const created = [];
@@ -2593,7 +2670,6 @@ VanillaBrick.services.WireService = {
   }
 
 
-
 // Ensure runtime services registry
 VanillaBrick.runtime.services = VanillaBrick.runtime.services || {};
 
@@ -2621,6 +2697,7 @@ VanillaBrick.base.serviceStart = function (name) {
 
     const opts = Object.assign({}, def);
     opts.id = name; // Service name as ID
+    opts.host = 'service';
     opts.kind = opts.kind || 'service';
 
     // Create brick instance

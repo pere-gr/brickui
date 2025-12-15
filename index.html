@@ -13,7 +13,7 @@
 
   <!-- VanillaBrick JS -->
   <script defer src="./dist/vanillabrick.js"></script>
-  <script defer src="./demos/demo.js"></script>
+  <!--<script defer src="./demos/demo.js"></script>-->
 </head>
 
 <body>
@@ -27,16 +27,27 @@
       <!-- Left column: Grid (brick) -->
       <div class="vb-span-6">
         <h2>Grid (Brick)</h2>
-        <table id="grid1" class="vb vb-grid" brick-kind="grid">
+        <table id="grid1" class="vb vb-grid" brick-kind="grid" wire-kind="master">
           <thead></thead>
           <tbody></tbody>
         </table>
+        <script type="application/json" data-brick>
+        {
+          "grid1": {
+            "wire": {
+              "master": true,
+              "slave": []
+            }
+          }
+        }
+        </script>
+
       </div>
 
       <!-- Right column: Form (HTML) -->
       <div class="vb-span-6">
         <h2>Form (HTML)</h2>
-        <form class="vb vb-form" brick-kind="form" brick-form-items="DEMO_FORM_ITEMS">
+        <form id="form1" class="vb vb-form" brick-kind="form" wire-kind="slave" brick-form-items="DEMO_FORM_ITEMS">
           <!-- Form group 1: Code and Name in 2 columns -->
           <div class="vb-form-group">
             <div class="vb-row">
@@ -83,8 +94,18 @@
           <div class="vb-form-actions">
             <button type="submit" class="vb-btn vb-btn-primary">Save</button>
             <button type="reset" class="vb-btn vb-btn-secondary">Reset</button>
-          </div>
+        </div>
         </form>
+        <script type="application/json" data-brick>
+        {
+          "form1": {
+            "wire": {
+              "master": true,
+              "slave": ["grid1"]
+            }
+          }
+        }
+        </script>
       </div>
     </div>
   </div>

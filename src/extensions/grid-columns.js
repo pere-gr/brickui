@@ -1,5 +1,5 @@
 VanillaBrick.extensions.columns = {
-  for: ['grid'],
+  for: [{ host: 'brick', kind: 'grid' }],
   requires: ['dom', 'store'],
   ns: 'columns',
   options: {},
@@ -91,5 +91,4 @@ VanillaBrick.extensions.columns = {
     }
   }
 };
-
 

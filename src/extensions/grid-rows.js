@@ -1,5 +1,5 @@
 VanillaBrick.extensions.rows = {
-  for: ['grid'],
+  for: [{ host: 'brick', kind: 'grid' }],
   requires: ['dom', 'store', 'columns'],
   ns: 'rows',
   options: {},
@@ -68,4 +68,3 @@ VanillaBrick.extensions.rows = {
 
   destroy: function () { }
 };
-

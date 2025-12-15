@@ -1,5 +1,5 @@
 VanillaBrick.extensions.domCss = {
-  for: '*',
+  for: [{ host: 'brick', kind: '*' }],
   requires: ['dom'],
   ns: 'css',
   options: {},
@@ -105,4 +105,3 @@ VanillaBrick.extensions.domCss = {
 
   destroy: function () {}
 };
-

@@ -1,10 +1,38 @@
 
   VanillaBrick.base = VanillaBrick.base || {};
+  VanillaBrick.configs = VanillaBrick.configs || {};
 
   const registry = {
     list: [],
     byId: {},
   };
+
+  function loadConfigs(scope) {
+    if (typeof document === 'undefined') return;
+    const root = scope || document;
+    if (!root.querySelectorAll) return;
+    const scripts = root.querySelectorAll('script[type="application/json"][data-brick]');
+    for (let i = 0; i < scripts.length; i += 1) {
+      const node = scripts[i];
+      const raw = node.textContent || '';
+      if (!raw.trim()) continue;
+      try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') continue;
+        for (const key in parsed) {
+          if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
+          const base = (VanillaBrick.configs[key] && typeof VanillaBrick.configs[key] === 'object')
+            ? VanillaBrick.configs[key]
+            : {};
+          const next = parsed[key];
+          if (!next || typeof next !== 'object') continue;
+          VanillaBrick.configs[key] = Object.assign({}, base, next);
+        }
+      } catch (err) {
+        console.warn('VanillaBrick: invalid JSON in data-brick config', err);
+      }
+    }
+  }
 
   function readKind(el) {
     if (!el) return undefined;
@@ -24,6 +52,11 @@
     if (el.__brickInstance) return el.__brickInstance;
 
     const opts = {};
+
+    const config = el.id && VanillaBrick.configs ? VanillaBrick.configs[el.id] : null;
+    if (config && typeof config === 'object') {
+      Object.assign(opts, config);
+    }
 
     if (el.id) {
       opts.id = el.id;
@@ -53,6 +86,9 @@
     if (typeof document === 'undefined') return [];
     const scope = root || document;
     if (!scope.querySelectorAll) return [];
+
+    // Carrega tots els blocs de configuració abans de crear bricks
+    loadConfigs(scope);
 
     const nodes = scope.querySelectorAll('.vb');
     const created = [];
@@ -89,5 +125,4 @@
       setTimeout(runOnce, 0);
     }
   }
-
 

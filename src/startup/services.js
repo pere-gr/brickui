@@ -25,6 +25,7 @@ VanillaBrick.base.serviceStart = function (name) {
 
     const opts = Object.assign({}, def);
     opts.id = name; // Service name as ID
+    opts.host = 'service';
     opts.kind = opts.kind || 'service';
 
     // Create brick instance

@@ -7,9 +7,16 @@
 function Brick(options) {
   const opts = options && typeof options === 'object' ? Object.assign({}, options) : {};
   opts.id = opts.id || this._nextId();
+  opts.host = (opts.host || 'brick').toLowerCase();
   opts.kind = (opts.kind || 'brick').toLowerCase();
   Object.defineProperty(this, 'id', {
     value: opts.id,
+    writable: false,
+    configurable: false,
+    enumerable: true
+  });
+  Object.defineProperty(this, 'host', {
+    value: opts.host,
     writable: false,
     configurable: false,
     enumerable: true
@@ -60,4 +67,3 @@ Object.defineProperty(Brick.prototype, '_nextId', {
 });
 
 VanillaBrick.brick = Brick;
-

@@ -13,32 +13,44 @@ VanillaBrick.controllers.extensionsRegistry = VanillaBrick.controllers.extension
 
   /**
    * Retorna un array amb totes les definicions d'extensions
-   * filtrades per brick kind i amb dependències resoltes (topological sort).
+   * filtrades per host/kind i amb dependències resoltes (topological sort).
    *
-   * @param {Object} brick - Instancia del brick o objecte de metadates {kind: '...'}
+   * @param {Object} brick - Instancia del brick o objecte de metadates {host:'brick', kind:'grid'}
    */
   all: function (brick) {
     if (!brick || typeof brick !== 'object') {
-      // Legacy/Fallback: return everything if no context is provided
-      // (Though plan said strictly require it, we can fallback to old behavior or empty)
-      // Let's stick strictly to plan: Empty or try to work?
-      // User said "early-alpha i ens podem carregar el que volguem".
-      // Let's return empty or warn. Returning empty is safer.
       console.warn('ExtensionsRegistry.all() called without brick context');
       return [];
     }
 
+    const host = (brick.host || 'brick').toLowerCase();
     const kind = brick.kind;
     if (!kind) return [];
 
-    if (this._cache[kind]) {
-      return this._cache[kind];
+    const cacheKey = host + '::' + kind;
+    if (this._cache[cacheKey]) {
+      return this._cache[cacheKey];
     }
 
     const src = VanillaBrick.extensions || {};
     const candidates = {};
 
-    // 1. Initial Filter by Kind (and prepare candidates map)
+    function normalizeRule(rule) {
+      if (!rule || typeof rule !== 'object') return null;
+      const rHost = (rule.host || 'brick').toLowerCase();
+      const rKind = typeof rule.kind === 'string' ? rule.kind.toLowerCase() : '';
+      if (!rKind) return null;
+      return { host: rHost, kind: rKind };
+    }
+
+    function matchesRule(rule, currentHost, currentKind) {
+      if (!rule) return false;
+      const hostMatch = rule.host === '*' || rule.host === currentHost;
+      const kindMatch = rule.kind === '*' || rule.kind === currentKind;
+      return hostMatch && kindMatch;
+    }
+
+    // 1. Initial Filter by host/kind (and prepare candidates map)
     for (const key in src) {
       if (!Object.prototype.hasOwnProperty.call(src, key)) continue;
       const def = src[key];
@@ -47,16 +59,20 @@ VanillaBrick.controllers.extensionsRegistry = VanillaBrick.controllers.extension
       // Normalitzar el nom intern
       if (!def._name) def._name = def.ns || key;
 
-      // Check 'for' rule
-      const rule = def.for || def._for;
-      let match = false;
+      const rules = def.for;
+      if (!Array.isArray(rules) || !rules.length) {
+        console.warn('VanillaBrick extension without valid `for` array, skipped', def._name || key);
+        continue;
+      }
 
-      if (!rule || rule === '*') {
-        match = true;
-      } else if (typeof rule === 'string') {
-        match = (rule === kind);
-      } else if (Array.isArray(rule)) {
-        match = (rule.indexOf(kind) !== -1);
+      let match = false;
+      for (let ri = 0; ri < rules.length; ri += 1) {
+        const rule = normalizeRule(rules[ri]);
+        if (!rule) continue;
+        if (matchesRule(rule, host, kind)) {
+          match = true;
+          break;
+        }
       }
 
       if (match) {
@@ -102,7 +118,7 @@ VanillaBrick.controllers.extensionsRegistry = VanillaBrick.controllers.extension
       visit(name);
     }
 
-    this._cache[kind] = sortedList;
+    this._cache[cacheKey] = sortedList;
     return sortedList;
   }
 };

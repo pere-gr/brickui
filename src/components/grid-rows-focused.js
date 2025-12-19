@@ -1,5 +1,5 @@
 export const gridRowsFocused = {
-  for: [{ host: 'brick', kind: 'grid' }],
+    for: [{ host: 'brick', kind: 'grid' }],
     requires: ['dom', 'rows', 'store'],
     ns: 'rowsFocused',
     options: {},
@@ -55,7 +55,7 @@ export const gridRowsFocused = {
         {
             for: 'store:data:set',
             after: {
-                fn: function () {
+                fn: function (ev) {
                     this._addTabIndex();
                 }
             }
@@ -67,7 +67,16 @@ export const gridRowsFocused = {
                     this._addTabIndex();
                 }
             }
+        },
+        {
+            for: 'dom:row:focus',
+            after: {
+                fn: function (ev) {
+                    this.brick.wire?.notify('dom:row:focus', ev.data);
+                }
+            }
         }
+
     ],
 
     init: function () { },

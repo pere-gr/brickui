@@ -15,6 +15,7 @@ import components_3 from './components/grid-columns.js';
 import components_4 from './components/grid-rows-focused.js';
 import components_5 from './components/grid-rows.js';
 import components_6 from './components/grid.js';
+import components_7 from './components/status-bar.js';
 import services_0 from './services/wire.js';
 
 export function registerBuiltins(VanillaBrick) {
@@ -58,6 +59,9 @@ if (components_5) {
 }
 if (components_6) {
   VanillaBrick.extensions['grid'] = components_6;
+}
+if (components_7) {
+  VanillaBrick.extensions['statusBar'] = components_7;
 }
 VanillaBrick.services['WireService'] = services_0;
 

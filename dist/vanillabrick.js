@@ -1646,15 +1646,29 @@
     ns: "wire",
     options: {},
     brick: {
-      send: function(eventName, data) {
-        console.warn("send", eventName, data);
-        console.log("this", this);
-        if (!this.service)
+      notify: function(eventName, data) {
+        console.warn("WireClient > sending notify", eventName, data);
+        console.log("	for event", eventName);
+        console.log("	with payload", data);
+        if (!this.ext._service)
           this.ext._connect();
-        if (!this.service)
+        if (!this.ext._service)
           return;
-        console.log("this.service", this.service);
-        this.service.events.fire("wire:message", {
+        this.ext._service.events.fire("wire:notify:out", {
+          from: this.brick.id,
+          event: eventName,
+          data
+        });
+      },
+      request: function(eventName, data) {
+        console.warn("request", eventName, data);
+        console.log("this", this);
+        if (!this.ext._service)
+          this.ext._connect();
+        if (!this.ext._service)
+          return;
+        console.log("this.service", this.ext._service);
+        this.ext._service.events.fire("wire:request:out", {
           from: this.brick.id,
           event: eventName,
           data
@@ -1662,7 +1676,7 @@
       }
     },
     extension: {
-      service: null,
+      _service: null,
       _connect: function() {
         if (this.ext._service)
           return;
@@ -1673,30 +1687,13 @@
           this.ext._service = globalThis.VanillaBrick.service("WireService");
         }
         if (this.ext._service) {
-          this.ext._service.wire.register(this.brick, this.brick.options.get("wire", {}));
+          this.ext._service.events.fire("wire:register:in", {
+            brick: this.brick,
+            options: this.brick.options.get("wire", {})
+          });
+        } else {
+          console.warn("[Wire Client] No Wire Service found.", this.ext._service);
         }
-      },
-      _handleBroadcast: function(ev) {
-        const payload = ev.data || {};
-        const senderId = payload.from;
-        const eventName = payload.event;
-        const data = payload.data;
-        if (senderId === this.brick.id)
-          return;
-        if (eventName) {
-          this.brick.events.fire(eventName, data);
-        }
-      },
-      _send: function(eventName, data) {
-        if (!this.service)
-          this._connect();
-        if (!this.service)
-          return;
-        this.service.events.fire("wire:message", {
-          from: this.brick.id,
-          event: eventName,
-          data
-        });
       }
     },
     events: [
@@ -1705,23 +1702,6 @@
         on: {
           fn: function() {
             this._connect();
-          }
-        }
-      },
-      {
-        for: "wire:outbound",
-        on: {
-          fn: function(ev) {
-            const p = ev.data || {};
-            this._send(p.event, p.data);
-          }
-        }
-      },
-      {
-        for: "*:*:*",
-        on: {
-          fn: function(ev) {
-            console.log("wire", ev);
           }
         }
       }
@@ -1741,24 +1721,70 @@
     // No strict requirements
     ns: "wire",
     options: {},
-    brick: {
-      register: function(brick, config) {
-        console.log("register", brick, config);
-      },
-      login: function(brick, config) {
-        console.log("login", this, brick, config);
-      }
-    },
+    brick: {},
     events: [
       {
-        for: "wire:send:register",
+        for: "wire:notify:out",
         on: {
           fn: function(ev) {
-            console.log("", ev);
+            console.warn("WireService > on wire:notify:out", ev);
+            const master = ev.data.from;
+            console.log("	from", master);
+            const evName = ev.data.event;
+            console.log("	evName", evName);
+            const evData = ev.data.data;
+            console.log("	evData", evData);
+            const slaves = this.ext._slaves[master];
+            console.log("	for slaves", slaves);
+            if (slaves && slaves.length > 0) {
+              for (let i = 0; i < slaves.length; i++) {
+                console.log("	- firing", evName, "in", slaves[i].brick.id);
+                slaves[i].brick.events.fire(evName, evData);
+              }
+            }
+          }
+        }
+      },
+      {
+        for: "wire:register:in",
+        on: {
+          fn: function(ev) {
+            this.ext._register(ev.data);
           }
         }
       }
-    ]
+    ],
+    extension: {
+      _register: function(data) {
+        console.warn("register", data.brick, data.options, this);
+        if (data.options.master) {
+          if (this.ext._bricks == null)
+            this.ext._bricks = {};
+          this.ext._bricks[data.brick.id] = data.brick;
+        }
+        if (data.options.slaveOf && data.options.slaveOf.length > 0) {
+          if (this.ext._masters == null)
+            this.ext._masters = {};
+          if (this.ext._slaves == null)
+            this.ext._slaves = {};
+          for (let i = 0; i < data.options.slaveOf.length; i++) {
+            let master = this.ext._masters[data.brick.id];
+            if (!master) {
+              this.ext._masters[data.brick.id] = [];
+            }
+            this.ext._masters[data.brick.id].push({ id: data.options.slaveOf[i].id, kind: data.options.slaveOf[i].kind });
+            let slave = this.ext._slaves[data.options.slaveOf[i].id];
+            if (!slave) {
+              this.ext._slaves[data.options.slaveOf[i].id] = [];
+            }
+            this.ext._slaves[data.options.slaveOf[i].id].push({ id: data.brick.id, kind: data.brick.kind, brick: data.brick });
+          }
+        }
+        console.log("_bricks", this.ext._bricks);
+        console.log("_masters", this.ext._masters);
+        console.log("_slaves", this.ext._slaves);
+      }
+    }
   };
   var wire_service_default = wireservice;
 
@@ -1983,6 +2009,17 @@
             this._bind(record);
           }
         }
+      },
+      {
+        for: "dom:row:focus",
+        after: {
+          fn: function(ev) {
+            console.warn("Form > master focused a row", ev);
+            const record = ev.data.row;
+            console.log("	record", record);
+            this._bind(record);
+          }
+        }
       }
     ],
     init: function() {
@@ -2182,7 +2219,7 @@
       {
         for: "store:data:set",
         after: {
-          fn: function() {
+          fn: function(ev) {
             this._addTabIndex();
           }
         }
@@ -2192,6 +2229,15 @@
         after: {
           fn: function() {
             this._addTabIndex();
+          }
+        }
+      },
+      {
+        for: "dom:row:focus",
+        after: {
+          fn: function(ev) {
+            var _a;
+            (_a = this.brick.wire) == null ? void 0 : _a.notify("dom:row:focus", ev.data);
           }
         }
       }
@@ -2402,6 +2448,33 @@
   };
   var grid_default = grid;
 
+  // src/components/status-bar.js
+  var statusBar = {
+    for: [{ host: "brick", kind: "status-bar" }],
+    requires: ["dom"],
+    ns: "statusBar",
+    events: [
+      {
+        for: "dom:row:focus",
+        after: {
+          fn: function(ev) {
+            const record = ev.data.row;
+            const el = this.brick.dom.element();
+            if (el) {
+              el.textContent = `Wire OK -> Selected: ${record.name}`;
+            }
+          }
+        }
+      }
+    ],
+    init: function() {
+      const el = this.brick.dom.element();
+      if (el)
+        el.textContent = "Wire status: Waiting for grid...";
+    }
+  };
+  var status_bar_default = statusBar;
+
   // src/services/wire.js
   var WireService = {
     kind: "wire"
@@ -2448,6 +2521,9 @@
     }
     if (grid_default) {
       VanillaBrick2.extensions["grid"] = grid_default;
+    }
+    if (status_bar_default) {
+      VanillaBrick2.extensions["statusBar"] = status_bar_default;
     }
     VanillaBrick2.services["WireService"] = wire_default;
   }

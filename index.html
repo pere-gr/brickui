@@ -22,7 +22,19 @@
       <h1>VanillaBrick Demo</h1>
       <p>Grid layout system with brick grid and HTML form</p>
     </header>
-
+    <div class="vb-row">
+      <div class="vb-span-12">
+        <div id="status1" class="vb" brick-kind="status-bar"></div>
+        <script type="application/json" data-brick>
+        {
+          "status1": {
+            "wire": {
+              "slaveOf": [{"kind": "grid", "id": "grid1"}]
+            }
+          }
+        }
+        </script>
+      </div>
     <div class="vb-row">
       <!-- Left column: Grid (brick) -->
       <div class="vb-span-6">
@@ -66,13 +78,13 @@
             </div>
           </div>
 
-          <!-- Form group 2: Email full width -->
+          <!-- Form group 2: key full width -->
           <div class="vb-form-group">
             <div class="vb-row">
               <div class="vb-span-12">
                 <div class="vb-form-field">
-                  <label for="email">Email</label>
-                  <input type="email" id="email" name="email" placeholder="Enter email">
+                  <label for="key">key</label>
+                  <input type="text" id="key" name="key" placeholder="key">
                 </div>
               </div>
             </div>
@@ -101,12 +113,13 @@
           "form1": {
             "wire": {
               "master": true,
-              "slave": ["grid1"]
+              "slaveOf": [{"kind": "grid", "id": "grid1"},{"kind": "toolbar", "id": "tb1"}]
             }
           }
         }
         </script>
       </div>
+
     </div>
   </div>
 </body>

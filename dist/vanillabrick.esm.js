@@ -65,28 +65,6 @@ function Brick(options) {
     ctrl.events.init(brick);
   if (ctrl.extensions)
     ctrl.extensions.init(brick);
-  this.status = {
-    get: () => ctrl.status.get(brick),
-    set: (status, payload) => ctrl.status.set(brick, status, payload),
-    is: (status) => ctrl.status.is(brick, status)
-  };
-  this.options = {
-    get: (key, fallback) => ctrl.options.get(brick, key, fallback),
-    set: (key, value) => {
-      ctrl.options.setSync(brick, key, value);
-      return brick;
-    },
-    setAsync: async (key, value) => {
-      await ctrl.options.setAsync(brick, key, value);
-      return brick;
-    },
-    has: (key) => ctrl.options.has(brick, key),
-    all: () => ctrl.options.all(brick),
-    setSilent: (key, value) => {
-      ctrl.options.setSilent(brick, key, value);
-      return brick;
-    }
-  };
   if (ctrl.extensions) {
     ctrl.extensions.applyAll(brick);
   }
@@ -354,6 +332,12 @@ StatusController.prototype.init = function(brick) {
     value: "initializing",
     listening: true
   };
+  const self = this;
+  brick.status = {
+    get: () => self.get(brick),
+    set: (status, payload) => self.set(brick, status, payload),
+    is: (status) => self.is(brick, status)
+  };
 };
 StatusController.prototype.get = function(brick) {
   return brick && brick._runtime && brick._runtime.status ? brick._runtime.status.value : void 0;
@@ -450,6 +434,30 @@ OptionsController.prototype.init = function(brick, initialOptions) {
   brick._runtime.options = {
     data: initialOptions || {},
     cache: {}
+  };
+  const self = this;
+  brick.options = {
+    get: function(key, fallback) {
+      return self.get(brick, key, fallback);
+    },
+    set: function(key, value) {
+      self.setSync(brick, key, value);
+      return brick;
+    },
+    setAsync: async function(key, value) {
+      await self.setAsync(brick, key, value);
+      return brick;
+    },
+    has: function(key) {
+      return self.has(brick, key);
+    },
+    all: function() {
+      self.all(brick);
+    },
+    setSilent: function(key, value) {
+      self.setSilent(brick, key, value);
+      return brick;
+    }
   };
 };
 OptionsController.prototype.all = function(brick) {
